@@ -1,0 +1,816 @@
+{
+  "name": "PeakSpan - Phase 1 - Fixed",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "555c8ff9-3d7d-4ec0-92ac-cd5429376911",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [-2672, 208],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "0b4ca26f-eb49-4979-a80b-f14a577b7c62", "name": "APIFY_API_TOKEN", "value": "REPLACE_WITH_APIFY_API_TOKEN", "type": "string" },
+            { "id": "dd43748b-267a-4125-8e7c-1cfda0c4bec9", "name": "APIFY_ACTOR_ID_IG_SEARCH", "value": "apify~instagram-search-scraper", "type": "string" },
+            { "id": "f4c61410-4ea3-420d-a5a4-95826df6e775", "name": "APIFY_ACTOR_ID_IG_PROFILE", "value": "apify~instagram-profile-scraper", "type": "string" },
+            { "id": "784d46c2-5ebf-4a26-8bdf-f2b87fa05ec6", "name": "APIFY_ACTOR_ID_FACEBOOK", "value": "apify~facebook-pages-scraper", "type": "string" },
+            { "id": "4f103e8b-adda-4d16-8997-58a916c32744", "name": "GHL_API_TOKEN", "value": "REPLACE_WITH_GHL_API_TOKEN", "type": "string" },
+            { "id": "1632bfd7-bade-402f-97df-0162ca19f1fd", "name": "GHL_LOCATION_ID", "value": "KM3KkAQFgG3bByTZmWLL", "type": "string" },
+            { "id": "fa8552f7-f42e-4293-bcf1-edb10def7e23", "name": "GHL_USER_ID", "value": "69a0e4d04cec914aa3be890e-mm46677z", "type": "string" },
+            { "id": "5a29fda1-ed69-4d11-afc3-8da27ddf51ac", "name": "ALERT_FROM_EMAIL", "value": "care@peakspan.com.au", "type": "string" },
+            { "id": "58e4563a-0e7c-48ff-a1bd-c56839c83b9d", "name": "ALERT_TO_EMAIL", "value": "care@peakspan.com.au", "type": "string" },
+            { "id": "350cc20c-e25e-479e-a272-9453c6e393e7", "name": "GHL_PIPELINE_ID", "value": "GJxH7CibePegFRJyBpcu", "type": "string" },
+            { "id": "46cee432-0050-4216-82e2-d6a01bd5bba2", "name": "GHL_STAGE_IDENTIFIED_ID", "value": "d230cf22-260a-447b-aeea-e36e0e530096", "type": "string" },
+            { "id": "4097f6ac-eca8-4940-a3bf-12a47568de5a", "name": "APIFY_ACTOR_ID_GOOGLE_SEARCH", "value": "apify~google-search-scraper", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "35214966-5f2d-4217-9dcb-8eefe68021a1",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "position": [-2448, 208],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "jsCode": "var now = new Date();\nvar pad = function(n) { return String(n).padStart(2, '0'); };\nvar datePart = [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())].join('');\nvar timePart = [pad(now.getHours()), pad(now.getMinutes()), pad(now.getSeconds())].join('');\nvar batchId = datePart + '-' + timePart;\n\nreturn [{\n  json: {\n    batchId: batchId,\n    runStartedAt: now.toISOString()\n  }\n}];"
+      },
+      "id": "0640512d-1bd4-4d8d-84b0-337c82ff11e9",
+      "name": "Generate Batch ID",
+      "type": "n8n-nodes-base.code",
+      "position": [-2224, 208],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  { json: { platform: 'instagram' } }\n];"
+      },
+      "id": "4ddff431-c309-4a61-b877-2dd6019b49e8",
+      "name": "Build Platform List",
+      "type": "n8n-nodes-base.code",
+      "position": [-2000, 208],
+      "typeVersion": 2
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "14af3483-cf94-4f5c-af2e-d2ae7cbf694d",
+      "name": "Set Platforms",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [-1776, 208],
+      "typeVersion": 3
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "164e776a-7d89-4c7b-a39c-4101dc9bd7bc",
+      "name": "Set Platform",
+      "type": "n8n-nodes-base.set",
+      "position": [-1552, 208],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "jsCode": "var platform = 'instagram';\ntry { platform = $input.first().json.platform || $node['Set Platforms'].json.platform || 'instagram'; } catch(e) {}\n\nvar keywords = [\n  'personaltrainersydney',\n  'sydneypersonaltrainer',\n  'sydneypt',\n  'personaltrainermelbourne',\n  'melbournepersonaltrainer',\n  'melbournept',\n  'personaltrainerbrisbane',\n  'brisbanepersonaltrainer',\n  'brisbanefit',\n  'personaltrainerperth',\n  'perthpersonaltrainer',\n  'perthpt',\n  'personaltraineradelaide',\n  'adelaidepersonaltrainer',\n  'personaltrainergoldcoast',\n  'goldcoastpt',\n  'personaltraineraustralia',\n  'australianpersonaltrainer',\n  'ptaustralia',\n  'fitnesscoachaustralia',\n  'onlineptaustralia',\n  'australianpt',\n  'sydneyfitnesstrainer',\n  'melbournefitness',\n  'sunshinecoastpt',\n  'newcastlept',\n  'geelongpt',\n  'cairnspt',\n  'perthfitness',\n  'certifiedpersonaltraineraustralia',\n];\n\nvar result = [];\nfor (var i = 0; i < keywords.length; i++) {\n  result.push({ json: { keyword: keywords[i], platform: platform } });\n}\nreturn result;"
+      },
+      "id": "528b0eac-7fce-4e4e-8371-d2f7d754eab7",
+      "name": "Set Keywords",
+      "type": "n8n-nodes-base.code",
+      "position": [-1328, 208],
+      "typeVersion": 2
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "2334ad5d-9837-4fde-8cd5-99a37fcdec12",
+      "name": "Loop Over Keywords",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [-1104, 208],
+      "typeVersion": 3
+    },
+    {
+      "parameters": { "amount": 10 },
+      "id": "775e21de-596e-440f-ad75-3b0dbe660d97",
+      "name": "Keyword Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "position": [-880, 208],
+      "typeVersion": 1.1,
+      "webhookId": "c3d4e5f6-a7b8-9012-cdef-keywordwait01"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            {
+              "id": "0893f214-a25b-4f0f-ac71-e54eed931411",
+              "leftValue": "={{ $json.platform }}",
+              "rightValue": "instagram",
+              "operator": { "type": "string", "operation": "equals", "name": "filter.operator.equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9fd1d2d1-f49f-4347-b8e6-9834796093da",
+      "name": "Platform Switch",
+      "type": "n8n-nodes-base.if",
+      "position": [-656, 208],
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "jsCode": "var token = $node['Config'].json.APIFY_API_TOKEN;\nvar keyword = $json.keyword;\nvar hashtag = keyword.replace(/\\s+/g, '').toLowerCase();\n\ntry {\n  var response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=' + token,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      directUrls: ['https://www.instagram.com/explore/tags/' + hashtag + '/'],\n      resultsType: 'posts',\n      resultsLimit: 300,\n      addParentData: false\n    })\n  });\n  return [{ json: { data: response.data || response, keyword: keyword, platform: $json.platform, error: false } }];\n} catch (e) {\n  return [{ json: { data: null, keyword: keyword, platform: $json.platform, error: true, errorMessage: e.message } }];\n}"
+      },
+      "id": "768cc67a-15aa-40af-898f-bc4bab0810a3",
+      "name": "Run Hashtag Scraper",
+      "type": "n8n-nodes-base.code",
+      "position": [-368, 48],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "name": "filter.operator.true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e1639c3a-b705-44f8-9807-721d131a9f33",
+      "name": "Check Google Run Error",
+      "type": "n8n-nodes-base.if",
+      "position": [-144, 48],
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "id": "bdb9f41c-f9ef-4df8-8bd9-e141e45c3749",
+      "name": "Wait For Hashtag Run",
+      "type": "n8n-nodes-base.wait",
+      "position": [64, -80],
+      "typeVersion": 1.1,
+      "webhookId": "d1548cdd-bb8e-4211-8c8e-a49fc7297604"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $node['Wait For Hashtag Run'].json.data.defaultDatasetId }}/items?token={{ $node['Config'].json.APIFY_API_TOKEN }}",
+        "options": {}
+      },
+      "id": "c2e41ff0-42e6-4fab-a23a-d5a579d15f74",
+      "name": "Get Search Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [224, 0],
+      "typeVersion": 4.3
+    },
+    {
+      "parameters": {
+        "jsCode": "if ($json.error === true) {\n  return [{ json: { usernames: [], directUrls: [], usernameCount: 0, keyword: $json.keyword, platform: $json.platform, skipped: true } }];\n}\n\nvar rawInput = $input.all();\nvar usernames = [];\nvar seen = {};\n\nvar allPosts = [];\nfor (var i = 0; i < rawInput.length; i++) {\n  var data = rawInput[i].json;\n  if (Array.isArray(data)) {\n    for (var k = 0; k < data.length; k++) { allPosts.push(data[k]); }\n  } else if (data) {\n    allPosts.push(data);\n  }\n}\n\nfor (var j = 0; j < allPosts.length; j++) {\n  var post = allPosts[j];\n  var username = (post.ownerUsername || post.username || '').toLowerCase().trim();\n  if (username && !seen[username]) {\n    seen[username] = true;\n    usernames.push(username);\n  }\n}\n\nvar directUrls = [];\nfor (var k = 0; k < usernames.length; k++) {\n  directUrls.push('https://www.instagram.com/' + usernames[k] + '/');\n}\n\nvar keyword = $node['Loop Over Keywords'].json.keyword || 'unknown';\nvar platform = $node['Set Platform'].json.platform || 'instagram';\n\nreturn [{\n  json: {\n    usernames: usernames,\n    directUrls: directUrls,\n    usernameCount: usernames.length,\n    keyword: keyword,\n    platform: platform\n  }\n}];"
+      },
+      "id": "60d5991b-61ad-49f6-8672-2e5a716caf10",
+      "name": "Extract Usernames",
+      "type": "n8n-nodes-base.code",
+      "position": [448, 0],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "var usernames = $json.usernames || [];\n\nif (usernames.length === 0) {\n  return [{\n    json: {\n      skipped: true,\n      reason: 'No usernames extracted from search results',\n      keyword: $json.keyword,\n      platform: $json.platform\n    }\n  }];\n}\n\nif (usernames.length > 40) { usernames = usernames.slice(0, 40); }\n\nvar directUrls = [];\nfor (var i = 0; i < usernames.length; i++) {\n  directUrls.push('https://www.instagram.com/' + usernames[i] + '/');\n}\n\nreturn [{\n  json: {\n    requestBody: JSON.stringify({\n      usernames: usernames,\n      resultsLimit: 500\n    }),\n    keyword: $json.keyword,\n    platform: $json.platform,\n    usernameCount: usernames.length,\n    directUrls: directUrls,\n    skipped: false\n  }\n}];"
+      },
+      "id": "799ce4f7-5b8a-4c34-8c84-e99a3461b66a",
+      "name": "Build Profile Request",
+      "type": "n8n-nodes-base.code",
+      "position": [672, 0],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 3 },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-skip-check-0001",
+              "leftValue": "={{ $json.skipped }}",
+              "rightValue": "true",
+              "operator": { "type": "string", "operation": "equals", "name": "filter.operator.equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "585a95a1-a452-4027-94d1-50a6b98c7567",
+      "name": "Has Usernames?",
+      "type": "n8n-nodes-base.if",
+      "position": [896, 0],
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/{{ $node['Config'].json.APIFY_ACTOR_ID_IG_PROFILE }}/runs?token={{ $node['Config'].json.APIFY_API_TOKEN }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.parse($json.requestBody) }}",
+        "options": {}
+      },
+      "id": "db6f3417-486e-4ed7-92fd-fac9ef5779b5",
+      "name": "Run IG Profile Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1120, 208],
+      "typeVersion": 4.3
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "minutes"
+      },
+      "id": "83e61f91-e234-42cc-8cbf-65b0ed5ae18b",
+      "name": "Wait For Profile Run",
+      "type": "n8n-nodes-base.wait",
+      "position": [1344, 208],
+      "typeVersion": 1.1,
+      "webhookId": "ab886168-ffde-4392-86c3-42273cda4d52"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $node['Run IG Profile Scraper'].json.data.defaultDatasetId }}/items?token={{ $node['Config'].json.APIFY_API_TOKEN }}",
+        "options": {}
+      },
+      "id": "764bda8c-7ecf-42e8-aee2-cdd417c2b200",
+      "name": "Get Profile Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1568, 208],
+      "typeVersion": 4.3
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/{{ $node['Config'].json.APIFY_ACTOR_ID_FACEBOOK }}/runs?token={{ $node['Config'].json.APIFY_API_TOKEN }}",
+        "options": {}
+      },
+      "id": "d1751267-53a4-4210-be72-4983cc79ea57",
+      "name": "Run FB Actor",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [-224, 432],
+      "typeVersion": 4.3
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "minutes"
+      },
+      "id": "074b0a55-1a6d-4b17-8644-c9fec59d083a",
+      "name": "Wait For FB Run",
+      "type": "n8n-nodes-base.wait",
+      "position": [0, 432],
+      "typeVersion": 1.1,
+      "webhookId": "5d10ff21-0e00-4294-b68f-2a1abbf75008"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $node['Run FB Actor'].json.data.defaultDatasetId }}/items?token={{ $node['Config'].json.APIFY_API_TOKEN }}",
+        "options": {}
+      },
+      "id": "0dbc7375-fc8b-49dc-8f96-4dbec536db8a",
+      "name": "Get FB Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [224, 432],
+      "typeVersion": 4.3
+    },
+    {
+      "parameters": {
+        "jsCode": "var results = $input.all().map(function(item) { return item.json; });\nvar validResults = results.filter(function(r) { return !r.error && !r.errorDescription; });\n\nif (validResults.length === 0) {\n  return [{ json: { hasResults: false, resultCount: 0, errorMessage: (results[0] && results[0].errorDescription) ? results[0].errorDescription : 'No results returned' } }];\n}\n\nvar output = [];\nfor (var i = 0; i < validResults.length; i++) {\n  output.push({ json: Object.assign({}, validResults[i], { hasResults: true }) });\n}\nreturn output;"
+      },
+      "id": "7aa3f03c-fa34-48ec-8f89-f1e706bc4cd7",
+      "name": "Check Results",
+      "type": "n8n-nodes-base.code",
+      "position": [1792, 304],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 3 },
+          "conditions": [
+            {
+              "id": "3818df22-62a6-4660-88f7-a2b9359627cc",
+              "leftValue": "={{ $json.hasResults }}",
+              "rightValue": "false",
+              "operator": { "type": "string", "operation": "equals", "name": "filter.operator.equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "667a20fb-a7c0-4556-82ef-d09f5b06d8f2",
+      "name": "Has Results?",
+      "type": "n8n-nodes-base.if",
+      "position": [2016, 304],
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "jsCode": "var platform = 'instagram';\ntry { platform = $node['Set Platform'].json.platform || 'instagram'; } catch(e) {}\n\nvar MIN_FOLLOWERS = 200;\nvar MAX_FOLLOWERS = 500000;\nvar MAX_DAYS_SINCE_POST = 90;\n\nvar PT_BIO_KEYWORDS = [\n  'personal trainer', 'personal training', 'fitness trainer', 'strength coach',\n  'fitness coach', 'certified trainer', 'accredited', 'cert iv', 'certificate iv',\n  'physique coach', 'body transformation', 'weight loss coach', 'online coach',\n  'gym coach', 'pt |', '| pt', 'pt/', '/pt', 'exercise scientist', 'exercise physiologist'\n];\n\nfunction daysAgo(dateStr) {\n  if (!dateStr) return 0;\n  var date = new Date(dateStr);\n  if (isNaN(date.getTime())) return 0;\n  var diffMs = Date.now() - date.getTime();\n  return Math.floor(diffMs / (1000 * 60 * 60 * 24));\n}\n\nfunction getBioScore(bio) {\n  if (!bio) return 0;\n  var lower = bio.toLowerCase();\n  for (var k = 0; k < PT_BIO_KEYWORDS.length; k++) {\n    if (lower.indexOf(PT_BIO_KEYWORDS[k]) !== -1) return 1;\n  }\n  return 0;\n}\n\nvar rawProfiles = $input.all().map(function(item) { return item.json; });\nvar seen = {};\nvar passed = [];\n\nfor (var i = 0; i < rawProfiles.length; i++) {\n  var raw = rawProfiles[i];\n\n  var username = (raw.username || raw.handle || raw.userName || '').toLowerCase().trim();\n  if (!username || seen[username]) continue;\n  seen[username] = true;\n\n  var followerCount = parseInt(raw.followersCount || raw.followers || raw.follower_count || raw.edge_followed_by_count || 0, 10);\n  var lastPostDate = raw.latestPostDate || raw.recentPostTimestamp || raw.last_post_date || raw.latestMediaDate || '';\n\n  if (followerCount > 0 && followerCount < MIN_FOLLOWERS) continue;\n  if (followerCount > MAX_FOLLOWERS) continue;\n  if (lastPostDate && daysAgo(lastPostDate) > MAX_DAYS_SINCE_POST) continue;\n\n  var bio = raw.biography || raw.bio || raw.description || raw.aboutText || '';\n  var bioQualified = getBioScore(bio) === 1;\n  var followingCount = parseInt(raw.followingCount || raw.following || raw.follows || 0, 10);\n  var postsCount = parseInt(raw.postsCount || raw.posts_count || raw.mediaCount || raw.edge_owner_to_timeline_media_count || 0, 10);\n  var displayName = raw.fullName || raw.name || raw.display_name || raw.full_name || '';\n  var profileUrl = raw.profileUrl || raw.url || raw.profile_url || '';\n  if (!profileUrl && username) {\n    profileUrl = 'https://www.instagram.com/' + username + '/';\n  }\n  var isBusinessAccount = raw.isBusinessAccount || raw.businessAccount || raw.is_business_account || false;\n  var isVerified = raw.verified || raw.isVerified || raw.is_verified || false;\n  var externalUrl = raw.externalUrl || raw.external_url || raw.website || '';\n  var locationRaw = raw.locationCity || raw.locationName || raw.location || raw.city || '';\n  var email = raw.businessEmail || raw.publicEmail || raw.email || '';\n  var phone = raw.businessPhone || raw.contactPhoneNumber || raw.phone || '';\n  var category = raw.businessCategory || raw.categoryName || raw.category || '';\n\n  passed.push({\n    json: {\n      platform: platform,\n      username: username,\n      displayName: displayName,\n      bio: bio,\n      followerCount: followerCount,\n      followingCount: followingCount,\n      postsCount: postsCount,\n      profileUrl: profileUrl,\n      profilePicUrl: raw.profilePicUrl || raw.profile_pic_url || '',\n      lastPostDate: lastPostDate,\n      isBusinessAccount: isBusinessAccount,\n      isVerified: isVerified,\n      externalUrl: externalUrl,\n      locationRaw: locationRaw,\n      email: email,\n      phone: phone,\n      category: category,\n      tags: bioQualified ? ['phase-1-import', 'bio-qualified'] : ['phase-1-import', 'bio-unverified'],\n      keywordType: 'primary',\n      bioQualified: bioQualified\n    }\n  });\n}\n\nreturn passed.length > 0 ? passed : [{ json: { skipped: true, reason: 'No profiles passed filter' } }];"
+      },
+      "id": "0c5a0928-3460-4c10-ad20-aa4aee9ce185",
+      "name": "Filter Profiles",
+      "type": "n8n-nodes-base.code",
+      "position": [2240, 512],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIX: Use modern n8n API to load sheet rows, with fallback to old API\nvar sheetData = [];\ntry {\n  var sheetItems = $('Load Sheet Data').all();\n  for (var s = 0; s < sheetItems.length; s++) {\n    sheetData.push(sheetItems[s].json);\n  }\n} catch(e1) {\n  try {\n    var fallbackItems = $items('Load Sheet Data');\n    for (var f = 0; f < fallbackItems.length; f++) {\n      sheetData.push(fallbackItems[f].json);\n    }\n  } catch(e2) {\n    sheetData = [];\n  }\n}\n\n// Per-run dedup tracker using static data - resets when batch ID changes\nvar staticData = $getWorkflowStaticData('node');\nvar currentBatchId = '';\ntry { currentBatchId = $node['Generate Batch ID'].json.batchId || ''; } catch(e) {}\nif (staticData.batchId !== currentBatchId) {\n  staticData.batchId = currentBatchId;\n  staticData.processedUsernames = {};\n}\n\n// Build lookup of all usernames already in the sheet\nvar existingUsernames = {};\nfor (var i = 0; i < sheetData.length; i++) {\n  var row = sheetData[i];\n  var uname = (row.username || row.Username || '').toLowerCase().trim();\n  if (uname) existingUsernames[uname] = true;\n}\n\n// Also include usernames already processed in this run (cross-keyword dedup)\nvar processedKeys = Object.keys(staticData.processedUsernames || {});\nfor (var p = 0; p < processedKeys.length; p++) {\n  existingUsernames[processedKeys[p]] = true;\n}\n\nvar incoming = $input.all().map(function(item) { return item.json; });\nvar newProfiles = [];\n\nfor (var j = 0; j < incoming.length; j++) {\n  var profile = incoming[j];\n  if (profile.skipped) continue;\n  var username = (profile.username || '').toLowerCase().trim();\n  if (username && existingUsernames[username]) continue;\n  if (username) {\n    staticData.processedUsernames[username] = true;\n    existingUsernames[username] = true;\n  }\n  newProfiles.push({ json: profile });\n}\n\nif (newProfiles.length === 0) return [];\nreturn newProfiles;"
+      },
+      "id": "1f4f6b44-2c71-4e23-bc26-49b492eb7279",
+      "name": "Dedup Against Sheet",
+      "type": "n8n-nodes-base.code",
+      "position": [2448, 624],
+      "typeVersion": 2
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "ad88b8e9-809d-41a2-86f2-d5c9519f5366",
+      "name": "Loop Over Filtered Profiles",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [2448, 448],
+      "typeVersion": 3
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIX: Search GHL by website field containing IG username - reliable dedup\nvar config = $node['Config'].json;\nvar profile = $input.first().json;\nvar username = (profile.username || '').toLowerCase().trim();\nvar searchValue = 'instagram.com/' + username;\n\nvar total = 0;\ntry {\n  var res = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://services.leadconnectorhq.com/contacts/search',\n    headers: {\n      'Authorization': 'Bearer ' + config.GHL_API_TOKEN,\n      'Content-Type': 'application/json',\n      'Version': '2021-07-28'\n    },\n    body: JSON.stringify({\n      locationId: config.GHL_LOCATION_ID,\n      filters: [{ field: 'website', operator: 'contains', value: searchValue }],\n      pageLimit: 5\n    })\n  });\n  total = (res.contacts || []).length;\n} catch(e) {\n  total = 0;\n}\n\nreturn [{ json: { total: total } }];"
+      },
+      "id": "64d48dc6-65f3-46f8-af23-c91ae8b101b0",
+      "name": "GHL Search Contact",
+      "type": "n8n-nodes-base.code",
+      "position": [2688, 512],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 3 },
+          "conditions": [
+            {
+              "id": "5e3ad826-7c23-4e69-a813-0049bf3867ca",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": "0",
+              "operator": { "type": "string", "operation": "equals", "name": "filter.operator.equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "ed7f5be3-0e71-4884-b93f-dfc7ca99efda",
+      "name": "Is New Contact?",
+      "type": "n8n-nodes-base.if",
+      "position": [2912, 512],
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "jsCode": "var profile = $node['Loop Over Filtered Profiles'].json;\nvar batchId = '';\ntry { batchId = $node['Generate Batch ID'].json.batchId; } catch(e) {}\nvar scrapeDate = new Date().toISOString().split('T')[0];\n\nvar tags = [\n  'source:apify',\n  'new-lead',\n  'phase-1-import',\n  'platform:' + (profile.platform || 'instagram'),\n  'batch:' + scrapeDate\n];\n\nif (profile.tags && Array.isArray(profile.tags)) {\n  for (var t = 0; t < profile.tags.length; t++) {\n    tags.push(profile.tags[t]);\n  }\n}\n\nif (profile.isBusinessAccount) tags.push('business-account');\nif (profile.isVerified) tags.push('verified');\n\nvar displayName = profile.displayName || profile.username || '';\nvar firstName = 'Unknown';\nvar lastName = '';\n\nif (displayName && displayName.trim() !== '') {\n  var parts = displayName.trim().split(/\\s+/);\n  firstName = parts[0] || 'Unknown';\n  lastName = parts.slice(1).join(' ') || '';\n}\n\nvar website = profile.profileUrl || '';\nif (!website && profile.username) {\n  website = 'https://www.instagram.com/' + profile.username + '/';\n}\n\nvar noteLines = [];\nnoteLines.push('=== Phase 1 Discovery Scrape ===');\nnoteLines.push('Scraped: ' + scrapeDate);\nnoteLines.push('Platform: ' + (profile.platform || 'instagram'));\nnoteLines.push('Username: @' + (profile.username || 'unknown'));\nnoteLines.push('Batch: ' + batchId);\nnoteLines.push('');\nnoteLines.push('=== Profile Info ===');\nnoteLines.push('Bio: ' + (profile.bio || 'N/A'));\nnoteLines.push('Followers: ' + (profile.followerCount || 0));\nnoteLines.push('Following: ' + (profile.followingCount || 0));\nnoteLines.push('Posts: ' + (profile.postsCount || 0));\nnoteLines.push('Last Post: ' + (profile.lastPostDate || 'unknown'));\nnoteLines.push('Location: ' + (profile.locationRaw || 'unknown'));\nnoteLines.push('Business Account: ' + (profile.isBusinessAccount ? 'Yes' : 'No'));\nnoteLines.push('Verified: ' + (profile.isVerified ? 'Yes' : 'No'));\nnoteLines.push('Category: ' + (profile.category || 'N/A'));\nnoteLines.push('');\nif (profile.externalUrl) noteLines.push('External URL: ' + profile.externalUrl);\nif (profile.email) noteLines.push('Business Email: ' + profile.email);\nif (profile.phone) noteLines.push('Business Phone: ' + profile.phone);\n\nreturn [{ json: {\n  firstName: firstName,\n  lastName: lastName,\n  locationId: $node['Config'].json.GHL_LOCATION_ID,\n  website: website,\n  tags: tags,\n  source: 'apify-scrape',\n  email: profile.email || '',\n  phone: profile.phone || '',\n  bio: profile.bio || '',\n  followerCount: profile.followerCount || 0,\n  postsCount: profile.postsCount || 0,\n  lastPostDate: profile.lastPostDate || '',\n  category: profile.category || '',\n  internalNote: noteLines.join('\\n')\n} }];"
+      },
+      "id": "8e9023f7-97f3-4726-b73a-48b04f5c9a61",
+      "name": "Transform For GHL",
+      "type": "n8n-nodes-base.code",
+      "position": [3136, 400],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Version", "value": "2021-07-28" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "firstName", "value": "={{ $json.firstName }}" },
+            { "name": "lastName", "value": "={{ $json.lastName }}" },
+            { "name": "locationId", "value": "={{ $json.locationId }}" },
+            { "name": "website", "value": "={{ $json.website }}" },
+            { "name": "source", "value": "={{ $json.source }}" },
+            { "name": "tags", "value": "={{ $json.tags }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f370823a-7515-473b-b14a-308777980313",
+      "name": "Create GHL Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [3360, 400],
+      "typeVersion": 4.3,
+      "credentials": {
+        "httpHeaderAuth": { "id": "DoQsxZ7ubNNNkxpG", "name": "Peakspan PT API Final" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var contactId = '';\nif ($json.contact && $json.contact.id) {\n  contactId = $json.contact.id;\n} else if ($json.id) {\n  contactId = $json.id;\n} else if ($json.contactId) {\n  contactId = $json.contactId;\n}\n\nif (!contactId) {\n  return [{ json: { error: 'No contact ID for note', skipped: true } }];\n}\n\nvar noteBody = $node['Transform For GHL'].json.internalNote || 'Phase 1 import - no details captured';\nvar config = $node['Config'].json;\n\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://services.leadconnectorhq.com/contacts/' + contactId + '/notes',\n    headers: {\n      'Authorization': 'Bearer ' + config.GHL_API_TOKEN,\n      'Content-Type': 'application/json',\n      'Version': '2021-07-28'\n    },\n    body: JSON.stringify({ body: noteBody })\n  });\n  return [{ json: { contactId: contactId, noteAdded: true } }];\n} catch (e) {\n  return [{ json: { contactId: contactId, noteAdded: false, error: e.message } }];\n}"
+      },
+      "id": "21943e8a-4a4b-431a-9775-f935ef00da14",
+      "name": "Add Internal Note to Contact1",
+      "type": "n8n-nodes-base.code",
+      "position": [3584, 400],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $node['Config'].json;\nvar contactId = $json.contact && $json.contact.id ? $json.contact.id : ($json.id || $json.contactId || '');\n\nif (!contactId) {\n  return [{ json: Object.assign({}, $json, { opportunityError: 'No contact ID', opportunityId: null }) }];\n}\n\ntry {\n  var firstName = '';\n  var lastName = '';\n  try { firstName = $('Transform For GHL').first().json.firstName || 'Lead'; } catch(e) {}\n  try { lastName = $('Transform For GHL').first().json.lastName || ''; } catch(e) {}\n\n  var opportunity = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://services.leadconnectorhq.com/opportunities/',\n    headers: {\n      'Authorization': 'Bearer ' + config.GHL_API_TOKEN,\n      'Content-Type': 'application/json',\n      'Version': '2021-07-28'\n    },\n    body: JSON.stringify({\n      pipelineId: config.GHL_PIPELINE_ID,\n      locationId: config.GHL_LOCATION_ID,\n      pipelineStageId: config.GHL_STAGE_IDENTIFIED_ID,\n      contactId: contactId,\n      name: firstName + ' ' + lastName + ' - Discovery',\n      status: 'open'\n    })\n  });\n  var oppId = (opportunity.opportunity && opportunity.opportunity.id) ? opportunity.opportunity.id : (opportunity.id || null);\n  return [{ json: Object.assign({}, $json, { opportunityId: oppId }) }];\n} catch (e) {\n  return [{ json: Object.assign({}, $json, { opportunityError: e.message, opportunityId: null }) }];\n}"
+      },
+      "id": "c6431720-5417-402b-a662-cd4842b7189e",
+      "name": "Create Pipeline Opportunity",
+      "type": "n8n-nodes-base.code",
+      "position": [3792, 400],
+      "typeVersion": 2
+    },
+    {
+      "parameters": { "amount": 1 },
+      "id": "50141dfc-c931-445f-95b8-0d5505f75964",
+      "name": "Rate Limit Delay",
+      "type": "n8n-nodes-base.wait",
+      "position": [4016, 400],
+      "typeVersion": 1.1,
+      "webhookId": "a46fc45f-1c68-436c-b668-3e76aa56850d"
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "c382d2d7-d0af-4ff4-a2bd-25ec4be97353",
+      "name": "Log Import Success",
+      "type": "n8n-nodes-base.set",
+      "position": [4240, 400],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "fd22040b-cbc5-4d0e-9034-349d0ca5eb93",
+      "name": "Log Dedup Skip",
+      "type": "n8n-nodes-base.set",
+      "position": [3136, 704],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "jsCode": "var now = new Date().toISOString();\nvar keyword = '';\nvar platform = '';\nvar batchId = '';\ntry { keyword = $node['Loop Over Keywords'].json.keyword || 'unknown'; } catch(e) {}\ntry { platform = $node['Set Platform'].json.platform || 'unknown'; } catch(e) {}\ntry { batchId = $node['Generate Batch ID'].json.batchId || 'unknown'; } catch(e) {}\n\nreturn [{\n  json: {\n    timestamp: now,\n    severity: 'medium',\n    errorType: 'APIFY_ZERO_RESULTS',\n    phase: 'Phase 1 - Discovery',\n    keyword: keyword,\n    platform: platform,\n    batchId: batchId,\n    message: ($input.first().json.errorMessage || 'No results returned from scraper'),\n    summary: 'Apify returned 0 valid results for keyword \"' + keyword + '\" on ' + platform + '. Skipping to next keyword.'\n  }\n}];"
+      },
+      "id": "73152ae7-a6c6-452e-9f9f-09400a0e7735",
+      "name": "Zero Results Alert",
+      "type": "n8n-nodes-base.code",
+      "position": [2240, 112],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "var errorContext = $input.first().json;\nvar now = new Date().toISOString();\n\nvar ERROR_TYPES = {\n  APIFY_ACTOR_FAILED:  { severity: 'high',   retry: true  },\n  APIFY_ZERO_RESULTS:  { severity: 'medium', retry: false },\n  GHL_API_RATE_LIMIT:  { severity: 'medium', retry: true  },\n  GHL_API_FAILURE:     { severity: 'high',   retry: true  },\n  GHL_IMPORT_FAILED:   { severity: 'medium', retry: true  },\n  FILTER_SCRIPT_ERROR: { severity: 'high',   retry: false },\n  UNKNOWN:             { severity: 'medium', retry: false }\n};\n\nvar errorType = errorContext.errorType || 'UNKNOWN';\nvar errorMeta = ERROR_TYPES[errorType] || ERROR_TYPES.UNKNOWN;\n\nreturn [{ json: {\n  timestamp: now,\n  severity: errorMeta.severity,\n  errorType: errorType,\n  shouldRetry: errorMeta.retry,\n  phase: 'Phase 1 - Discovery',\n  context: {\n    platform: errorContext.platform || 'unknown',\n    keyword: errorContext.keyword || 'unknown',\n    batchId: errorContext.batchId || 'unknown',\n    message: errorContext.message || 'No message provided'\n  },\n  summary: errorContext.summary || 'Unknown error in Phase 1 Discovery pipeline'\n} }];"
+      },
+      "id": "a5bec45c-4ab1-4b0c-aa31-90149ad5c433",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "position": [2464, 112],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0AHYBX9W1H", "mode": "list", "cachedResultName": "test-outreach-pt" },
+        "text": "=*Phase 1 Discovery Alert*\n\n*Severity:* {{$json.severity}}\n*Error:* {{$json.errorType}}\n\n*Summary:*\n{{$json.summary}}\n\n*Context:*\nPlatform: {{$json.context.platform}}\nKeyword: {{$json.context.keyword}}\nBatch: {{$json.context.batchId}}\nMessage: {{$json.context.message}}",
+        "otherOptions": {}
+      },
+      "id": "39b105af-6091-44bf-a106-b1b4552d52a1",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.slack",
+      "position": [2688, 112],
+      "typeVersion": 2.4,
+      "webhookId": "6c28d0ed-4af9-46e8-a9fd-82f6bf94f71a",
+      "credentials": {
+        "slackOAuth2Api": { "id": "YNAnxXJwi9vTcB2h", "name": "Slack Peakspan Outreach PT" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIX: Use modern API with try-catch fallback for reliable count reporting\nvar imported = 0;\nvar skipped = 0;\nvar batchId = '';\n\ntry { batchId = $node['Generate Batch ID'].json.batchId; } catch(e) {}\n\ntry { imported = $('Log Import Success').all().length; } catch(e) {\n  try { imported = $items('Log Import Success').length; } catch(e2) { imported = 0; }\n}\n\ntry { skipped = $('Log Dedup Skip').all().length; } catch(e) {\n  try { skipped = $items('Log Dedup Skip').length; } catch(e2) { skipped = 0; }\n}\n\nreturn [{\n  json: {\n    batchId: batchId,\n    runCompletedAt: new Date().toISOString(),\n    contacts_imported: imported,\n    contacts_skipped_dedup: skipped,\n    total_processed: imported + skipped\n  }\n}];"
+      },
+      "id": "d794ed41-8e7e-4b21-bc18-16cb45edcbba",
+      "name": "Run Summary",
+      "type": "n8n-nodes-base.code",
+      "position": [4464, 512],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0AHYBX9W1H", "mode": "list", "cachedResultName": "test-outreach-pt" },
+        "text": "=*Phase 1 Discovery Run Complete*\n\n*Batch:* {{$json.batchId}}\n*Completed:* {{$json.runCompletedAt}}\n\n*Contacts imported:* {{$json.contacts_imported}}\n*Contacts skipped (dedup):* {{$json.contacts_skipped_dedup}}\n*Total processed:* {{$json.total_processed}}\n*Apify Cost:* ${{$json.costUsd}} ({{$json.totalRuns}} actor runs)",
+        "otherOptions": {}
+      },
+      "id": "327fc4e0-fd25-4a07-9b09-389ed9de21b1",
+      "name": "Send Run Summary",
+      "type": "n8n-nodes-base.slack",
+      "position": [4688, 512],
+      "typeVersion": 2.4,
+      "webhookId": "a1b2c3d4-e5f6-7890-abcd-summarywhook1",
+      "credentials": {
+        "slackOAuth2Api": { "id": "YNAnxXJwi9vTcB2h", "name": "Slack Peakspan Outreach PT" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $('Config').first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\nvar summary = $input.first().json;\nvar today = new Date().toISOString().split('T')[0];\n\nvar ACTOR_IDS = [\n  'apify~instagram-scraper',\n  'apify~instagram-profile-scraper'\n];\n\nvar twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();\nvar totalCostUsd = 0;\nvar totalRuns = 0;\n\nfor (var a = 0; a < ACTOR_IDS.length; a++) {\n  var actorSlug = ACTOR_IDS[a];\n  try {\n    var runsRes = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.apify.com/v2/acts/' + actorSlug + '/runs?token=' + apifyToken + '&limit=100&desc=1'\n    });\n    var runs = (runsRes.data && runsRes.data.items) ? runsRes.data.items : [];\n    for (var i = 0; i < runs.length; i++) {\n      var run = runs[i];\n      var startedAt = run.startedAt || '';\n      if (startedAt < twoHoursAgo) { continue; }\n      totalCostUsd += run.usageTotalUsd || 0;\n      totalRuns++;\n    }\n  } catch (e) {}\n}\n\nreturn [{ json: {\n  batchId: summary.batchId || '',\n  runCompletedAt: summary.runCompletedAt || '',\n  contacts_imported: summary.contacts_imported || 0,\n  contacts_skipped_dedup: summary.contacts_skipped_dedup || 0,\n  total_processed: summary.total_processed || 0,\n  costUsd: totalCostUsd,\n  totalRuns: totalRuns,\n  'Date': today,\n  'Workflow': 'Phase 1 - Discovery',\n  'Actor': 'ig-hashtag-scraper + ig-profile-scraper',\n  'Run ID': summary.batchId || '',\n  'Actions Attempted': summary.total_processed || 0,\n  'Actions Succeeded': summary.contacts_imported || 0,\n  'Cost USD': totalCostUsd,\n  'Status': (summary.contacts_imported || 0) + ' imported / ' + (summary.contacts_skipped_dedup || 0) + ' skipped (' + totalRuns + ' actor runs)'\n} }];"
+      },
+      "id": "cost-phase1",
+      "name": "Query Phase 1 Costs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4688, 680]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1l0r8aKXnNQNCkjPDzFCCMb1W3gh3TPcKuwEV_U3Wm7A",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "cost-sheet-phase1",
+      "name": "Log Phase 1 Cost",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [4896, 680],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hSfPX8cXdmLAnLjm",
+          "name": "Hello Google API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": { "__rl": true, "value": "1ddmnl6-weG9bMJLJ2aqeYm5yJlFK6pzu2w0HiYINh3I", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
+        "options": {}
+      },
+      "id": "e23b9e2c-682f-493f-9ea6-8413b7dfa15d",
+      "name": "Load Sheet Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [-2000, 416],
+      "typeVersion": 4.5,
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "hSfPX8cXdmLAnLjm", "name": "Hello Google API" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "1ddmnl6-weG9bMJLJ2aqeYm5yJlFK6pzu2w0HiYINh3I", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": ["Username"],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "fcf0c920-2e0b-44b2-9769-1884bb27e138",
+      "name": "Append to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [4496, 304],
+      "typeVersion": 4.5,
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "hSfPX8cXdmLAnLjm", "name": "Hello Google API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var profile = $node['Loop Over Filtered Profiles'].json;\nvar batchId = '';\ntry { batchId = $node['Generate Batch ID'].json.batchId; } catch(e) {}\n\nreturn [{\n  json: {\n    Username: profile.username || '',\n    'Display Name': profile.displayName || '',\n    Platform: profile.platform || '',\n    Bio: profile.bio || '',\n    'Follower Count': profile.followerCount || 0,\n    'Following Count': profile.followingCount || 0,\n    'Posts Count': profile.postsCount || 0,\n    'Profile URL': profile.profileUrl || '',\n    'Last Post Date': profile.lastPostDate || '',\n    'Business Account': profile.isBusinessAccount ? 'Yes' : 'No',\n    Verified: profile.isVerified ? 'Yes' : 'No',\n    Website: profile.externalUrl || '',\n    Location: profile.locationRaw || '',\n    Email: profile.email || '',\n    Phone: profile.phone || '',\n    Category: profile.category || '',\n    'Scrape Date': new Date().toISOString().split('T')[0],\n    'Batch ID': batchId\n  }\n}];"
+      },
+      "id": "bf235d82-53b0-48d1-a5b1-b6f900e3e4fc",
+      "name": "Format for Sheet",
+      "type": "n8n-nodes-base.code",
+      "position": [4480, 736],
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
+    },
+    "Config": {
+      "main": [
+        [
+          { "node": "Generate Batch ID", "type": "main", "index": 0 },
+          { "node": "Load Sheet Data", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Generate Batch ID": {
+      "main": [[{ "node": "Build Platform List", "type": "main", "index": 0 }]]
+    },
+    "Build Platform List": {
+      "main": [[{ "node": "Set Platforms", "type": "main", "index": 0 }]]
+    },
+    "Set Platforms": {
+      "main": [
+        [],
+        [{ "node": "Set Platform", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set Platform": {
+      "main": [[{ "node": "Set Keywords", "type": "main", "index": 0 }]]
+    },
+    "Set Keywords": {
+      "main": [[{ "node": "Loop Over Keywords", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Keywords": {
+      "main": [
+        [],
+        [{ "node": "Keyword Rate Limit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Keyword Rate Limit": {
+      "main": [[{ "node": "Platform Switch", "type": "main", "index": 0 }]]
+    },
+    "Platform Switch": {
+      "main": [
+        [{ "node": "Run Hashtag Scraper", "type": "main", "index": 0 }],
+        [{ "node": "Run FB Actor", "type": "main", "index": 0 }]
+      ]
+    },
+    "Run Hashtag Scraper": {
+      "main": [[{ "node": "Check Google Run Error", "type": "main", "index": 0 }]]
+    },
+    "Check Google Run Error": {
+      "main": [
+        [{ "node": "Loop Over Keywords", "type": "main", "index": 0 }],
+        [{ "node": "Wait For Hashtag Run", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait For Hashtag Run": {
+      "main": [[{ "node": "Get Search Results", "type": "main", "index": 0 }]]
+    },
+    "Get Search Results": {
+      "main": [[{ "node": "Extract Usernames", "type": "main", "index": 0 }]]
+    },
+    "Extract Usernames": {
+      "main": [[{ "node": "Build Profile Request", "type": "main", "index": 0 }]]
+    },
+    "Build Profile Request": {
+      "main": [[{ "node": "Has Usernames?", "type": "main", "index": 0 }]]
+    },
+    "Has Usernames?": {
+      "main": [
+        [{ "node": "Loop Over Keywords", "type": "main", "index": 0 }],
+        [{ "node": "Run IG Profile Scraper", "type": "main", "index": 0 }]
+      ]
+    },
+    "Run IG Profile Scraper": {
+      "main": [[{ "node": "Wait For Profile Run", "type": "main", "index": 0 }]]
+    },
+    "Wait For Profile Run": {
+      "main": [[{ "node": "Get Profile Results", "type": "main", "index": 0 }]]
+    },
+    "Get Profile Results": {
+      "main": [[{ "node": "Check Results", "type": "main", "index": 0 }]]
+    },
+    "Run FB Actor": {
+      "main": [[{ "node": "Wait For FB Run", "type": "main", "index": 0 }]]
+    },
+    "Wait For FB Run": {
+      "main": [[{ "node": "Get FB Results", "type": "main", "index": 0 }]]
+    },
+    "Get FB Results": {
+      "main": [[{ "node": "Check Results", "type": "main", "index": 0 }]]
+    },
+    "Check Results": {
+      "main": [[{ "node": "Has Results?", "type": "main", "index": 0 }]]
+    },
+    "Has Results?": {
+      "main": [
+        [{ "node": "Zero Results Alert", "type": "main", "index": 0 }],
+        [{ "node": "Filter Profiles", "type": "main", "index": 0 }]
+      ]
+    },
+    "Zero Results Alert": {
+      "main": [[{ "node": "Error Handler", "type": "main", "index": 0 }]]
+    },
+    "Error Handler": {
+      "main": [[{ "node": "Send Error Alert", "type": "main", "index": 0 }]]
+    },
+    "Send Error Alert": {
+      "main": [[{ "node": "Loop Over Keywords", "type": "main", "index": 0 }]]
+    },
+    "Filter Profiles": {
+      "main": [[{ "node": "Dedup Against Sheet", "type": "main", "index": 0 }]]
+    },
+    "Dedup Against Sheet": {
+      "main": [[{ "node": "Loop Over Filtered Profiles", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Filtered Profiles": {
+      "main": [
+        [{ "node": "Run Summary", "type": "main", "index": 0 }],
+        [{ "node": "GHL Search Contact", "type": "main", "index": 0 }]
+      ]
+    },
+    "GHL Search Contact": {
+      "main": [[{ "node": "Is New Contact?", "type": "main", "index": 0 }]]
+    },
+    "Is New Contact?": {
+      "main": [
+        [{ "node": "Transform For GHL", "type": "main", "index": 0 }],
+        [{ "node": "Log Dedup Skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform For GHL": {
+      "main": [[{ "node": "Create GHL Contact", "type": "main", "index": 0 }]]
+    },
+    "Create GHL Contact": {
+      "main": [[{ "node": "Add Internal Note to Contact1", "type": "main", "index": 0 }]]
+    },
+    "Add Internal Note to Contact1": {
+      "main": [[{ "node": "Create Pipeline Opportunity", "type": "main", "index": 0 }]]
+    },
+    "Create Pipeline Opportunity": {
+      "main": [[{ "node": "Rate Limit Delay", "type": "main", "index": 0 }]]
+    },
+    "Rate Limit Delay": {
+      "main": [[{ "node": "Log Import Success", "type": "main", "index": 0 }]]
+    },
+    "Log Import Success": {
+      "main": [[{ "node": "Format for Sheet", "type": "main", "index": 0 }]]
+    },
+    "Log Dedup Skip": {
+      "main": [[{ "node": "Loop Over Filtered Profiles", "type": "main", "index": 0 }]]
+    },
+    "Run Summary": {
+      "main": [[{ "node": "Query Phase 1 Costs", "type": "main", "index": 0 }]]
+    },
+    "Query Phase 1 Costs": {
+      "main": [
+        [
+          { "node": "Send Run Summary", "type": "main", "index": 0 },
+          { "node": "Log Phase 1 Cost", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format for Sheet": {
+      "main": [[{ "node": "Append to Sheet", "type": "main", "index": 0 }]]
+    },
+    "Append to Sheet": {
+      "main": [[{ "node": "Loop Over Filtered Profiles", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "instanceId": "a2945d7afcd72eea07487deb91759681c87da7f2e7a0fe0acaa8976aa66ec446"
+  },
+  "tags": []
+}

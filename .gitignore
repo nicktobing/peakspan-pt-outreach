@@ -1,0 +1,10 @@
+# n8n local settings
+.claude/
+*.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

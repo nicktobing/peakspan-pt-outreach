@@ -1,0 +1,168 @@
+{
+  "name": "Phase 1B - AUSactive Directory Bulk Scrape (One-time)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-phase1b",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "APIFY_API_TOKEN",
+              "value": "REPLACE_WITH_APIFY_API_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "b2",
+              "name": "GHL_API_TOKEN",
+              "value": "REPLACE_WITH_GHL_API_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "b3",
+              "name": "GHL_LOCATION_ID",
+              "value": "KM3KkAQFgG3bByTZmWLL",
+              "type": "string"
+            },
+            {
+              "id": "b4",
+              "name": "GHL_PIPELINE_ID",
+              "value": "GJxH7CibePegFRJyBpcu",
+              "type": "string"
+            },
+            {
+              "id": "b5",
+              "name": "GHL_STAGE_IDENTIFIED_ID",
+              "value": "d230cf22-260a-447b-aeea-e36e0e530096",
+              "type": "string"
+            },
+            {
+              "id": "b6",
+              "name": "MAX_PAGES",
+              "value": "50",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg-phase1b",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [400, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\nvar maxPages = config.MAX_PAGES || 50;\n\n// AUSactive directory - paginated list of registered fitness professionals\n// URL pattern: https://directory.ausactive.org.au/directory/professionals?page=N\n// Each page has ~20 profiles\n\nvar startUrls = [];\nfor (var p = 1; p <= maxPages; p++) {\n  startUrls.push({\n    url: 'https://directory.ausactive.org.au/directory/professionals?page=' + p\n  });\n}\n\nvar runRes = null;\nvar runError = '';\ntry {\n  runRes = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.apify.com/v2/acts/apify~cheerio-scraper/runs?token=' + apifyToken,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      startUrls: startUrls,\n      pageFunction: 'async function pageFunction(context) {\\n  var $ = context.$;\\n  var results = [];\\n  var cards = $(\".directory-listing__item, .member-card, .professional-card, article, .listing-item\");\\n  if (cards.length === 0) {\\n    cards = $(\\'[class*=\"member\"],[class*=\"profile\"],[class*=\"listing\"],[class*=\"card\"]\\');\\n  }\\n  cards.each(function() {\\n    var el = $(this);\\n    var name = el.find(\\'[class*=\"name\"],h2,h3,h4\\').first().text().trim();\\n    var location = el.find(\\'[class*=\"location\"],[class*=\"suburb\"],[class*=\"city\"]\\').first().text().trim();\\n    var specialty = el.find(\\'[class*=\"specialty\"],[class*=\"specialisation\"],[class*=\"discipline\"],[class*=\"category\"]\\').first().text().trim();\\n    var profileLink = el.find(\\'a\\').attr(\\'href\\') || \\'\\';\\n    if (profileLink && !profileLink.startsWith(\\'http\\')) {\\n      profileLink = \\'https://directory.ausactive.org.au\\' + profileLink;\\n    }\\n    if (name) {\\n      results.push({ name: name, location: location, specialty: specialty, profileLink: profileLink, sourcePage: context.request.url });\\n    }\\n  });\\n  if (results.length === 0) {\\n    var allLinks = [];\\n    $(\\'a[href*=\"/directory/\"]\\').each(function() {\\n      var href = $(this).attr(\\'href\\') || \\'\\';\\n      var text = $(this).text().trim();\\n      if (href.indexOf(\\'/professionals/\\') !== -1 && text) {\\n        var fullHref = href.startsWith(\\'http\\') ? href : \\'https://directory.ausactive.org.au\\' + href;\\n        allLinks.push({ name: text, profileLink: fullHref, location: \\'\\', specialty: \\'\\', sourcePage: context.request.url });\\n      }\\n    });\\n    return allLinks;\\n  }\\n  return results;\\n}',\n      maxConcurrency: 3,\n      maxRequestsPerCrawl: maxPages + 10,\n      proxyConfiguration: { useApifyProxy: true }\n    })\n  });\n} catch (e) {\n  runError = e.message || String(e);\n}\n\nif (runError || !runRes) {\n  return [{ json: { status: 'Scraper failed to start: ' + runError, runId: '', datasetId: '' } }];\n}\n\nvar runData = runRes.data || runRes;\nvar runId = runData.id || '';\nvar datasetId = runData.defaultDatasetId || '';\n\nreturn [{ json: {\n  status: 'AUSactive scraper started',\n  runId: runId,\n  datasetId: datasetId,\n  pagesQueued: maxPages\n} }];\n"
+      },
+      "id": "scrape-phase1b",
+      "name": "Start AUSactive Scraper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 400]
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 15
+      },
+      "id": "wait-phase1b",
+      "name": "Wait 15 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [800, 400],
+      "webhookId": "wait-phase1b-1"
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\nvar prev = $input.first().json;\nvar runId = prev.runId || '';\nvar datasetId = prev.datasetId || '';\n\nif (!runId) {\n  return [{ json: { status: prev.status || 'No run to check', profiles: [], profileCount: 0 } }];\n}\n\n// Check run status\nvar runStatus = '';\ntry {\n  var statusRes = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.apify.com/v2/actor-runs/' + runId + '?token=' + apifyToken\n  });\n  var statusData = statusRes.data || statusRes;\n  runStatus = statusData.status || '';\n  if (!datasetId) { datasetId = statusData.defaultDatasetId || ''; }\n} catch (e) {\n  return [{ json: { status: 'Could not check run status: ' + e.message, profiles: [], profileCount: 0 } }];\n}\n\nif (runStatus !== 'SUCCEEDED') {\n  return [{ json: { status: 'Run not complete yet - status: ' + runStatus + '. Re-run this workflow or wait longer.', profiles: [], profileCount: 0, runId: runId, datasetId: datasetId } }];\n}\n\n// Fetch all results\nvar allProfiles = [];\nvar offset = 0;\nvar limit = 200;\nvar keepFetching = true;\n\nwhile (keepFetching) {\n  try {\n    var dataRes = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.apify.com/v2/datasets/' + datasetId + '/items?token=' + apifyToken + '&limit=' + limit + '&offset=' + offset\n    });\n    var items = Array.isArray(dataRes) ? dataRes : [];\n    for (var i = 0; i < items.length; i++) {\n      allProfiles.push(items[i]);\n    }\n    if (items.length < limit) {\n      keepFetching = false;\n    } else {\n      offset += limit;\n    }\n  } catch (e) {\n    keepFetching = false;\n  }\n}\n\n// Clean and deduplicate\nvar seen = {};\nvar cleaned = [];\nfor (var j = 0; j < allProfiles.length; j++) {\n  var p = allProfiles[j];\n  if (!p.name) { continue; }\n  var key = (p.name || '').toLowerCase().trim();\n  if (seen[key]) { continue; }\n  seen[key] = true;\n  cleaned.push({\n    name: (p.name || '').trim(),\n    location: (p.location || '').trim(),\n    specialty: (p.specialty || '').trim(),\n    profileLink: p.profileLink || '',\n    sourcePage: p.sourcePage || ''\n  });\n}\n\nreturn [{ json: {\n  status: 'Scrape complete - ' + cleaned.length + ' unique profiles found',\n  profiles: cleaned,\n  profileCount: cleaned.length,\n  runId: runId,\n  datasetId: datasetId\n} }];\n"
+      },
+      "id": "fetch-phase1b",
+      "name": "Fetch and Clean Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar prev = $input.first().json;\nvar profiles = prev.profiles || [];\n\nif (profiles.length === 0) {\n  return [{ json: { status: prev.status, imported: 0, skipped: 0, failed: 0 } }];\n}\n\nvar ghlHeaders = {\n  'Authorization': 'Bearer ' + config.GHL_API_TOKEN,\n  'Content-Type': 'application/json',\n  'Version': '2021-07-28'\n};\n\nvar today = new Date().toISOString().split('T')[0];\nvar imported = 0;\nvar skipped = 0;\nvar failed = 0;\nvar importedNames = [];\n\nfor (var i = 0; i < profiles.length; i++) {\n  var profile = profiles[i];\n  var fullName = profile.name || 'Unknown';\n  var parts = fullName.trim().split(/\\s+/);\n  var firstName = parts[0] || 'Unknown';\n  var lastName = parts.slice(1).join(' ') || '';\n\n  // Check if already in GHL by name\n  var existingCount = 0;\n  try {\n    var searchRes = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://services.leadconnectorhq.com/contacts/search',\n      headers: ghlHeaders,\n      body: JSON.stringify({\n        locationId: config.GHL_LOCATION_ID,\n        searchAfter: [fullName.toLowerCase()],\n        filters: [{ field: 'firstName', operator: 'contains', value: firstName }],\n        pageLimit: 5\n      })\n    });\n    existingCount = (searchRes.contacts || []).length;\n  } catch (e) {\n    existingCount = 0;\n  }\n\n  if (existingCount > 0) {\n    skipped++;\n    continue;\n  }\n\n  var tags = [\n    'source:ausactive-directory',\n    'new-lead',\n    'phase-1-import',\n    'bio-qualified',\n    'batch:' + today\n  ];\n  if (profile.location) { tags.push('location:' + profile.location.toLowerCase().replace(/\\s+/g, '-')); }\n  if (profile.specialty) { tags.push('specialty:' + profile.specialty.toLowerCase().replace(/\\s+/g, '-').substring(0, 30)); }\n\n  var noteText = '=== AUSactive Directory Import ===\\nImported: ' + today + '\\nFull Name: ' + fullName + '\\nLocation: ' + (profile.location || 'N/A') + '\\nSpecialty: ' + (profile.specialty || 'N/A') + '\\nAUSactive Profile: ' + (profile.profileLink || 'N/A') + '\\nSource Page: ' + (profile.sourcePage || 'N/A');\n\n  var contactId = '';\n  try {\n    var createRes = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://services.leadconnectorhq.com/contacts/',\n      headers: ghlHeaders,\n      body: JSON.stringify({\n        firstName: firstName,\n        lastName: lastName,\n        locationId: config.GHL_LOCATION_ID,\n        source: 'ausactive-directory',\n        tags: tags\n      })\n    });\n    var contact = createRes.contact || createRes;\n    contactId = contact.id || '';\n  } catch (e) {\n    failed++;\n    continue;\n  }\n\n  if (contactId) {\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://services.leadconnectorhq.com/contacts/' + contactId + '/notes',\n        headers: ghlHeaders,\n        body: JSON.stringify({ body: noteText })\n      });\n    } catch (e) {}\n\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://services.leadconnectorhq.com/opportunities/',\n        headers: ghlHeaders,\n        body: JSON.stringify({\n          pipelineId: config.GHL_PIPELINE_ID,\n          locationId: config.GHL_LOCATION_ID,\n          pipelineStageId: config.GHL_STAGE_IDENTIFIED_ID,\n          contactId: contactId,\n          name: firstName + ' ' + lastName + ' - Discovery',\n          status: 'open'\n        })\n      });\n    } catch (e) {}\n\n    imported++;\n    importedNames.push(fullName);\n  }\n\n  // Small delay to avoid GHL rate limits\n  await new Promise(function(resolve) { setTimeout(resolve, 300); });\n}\n\nreturn [{ json: {\n  status: 'AUSactive import complete',\n  imported: imported,\n  skipped: skipped,\n  failed: failed,\n  total: profiles.length,\n  runDate: today\n} }];\n"
+      },
+      "id": "import-phase1b",
+      "name": "Import to GHL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AHYBX9W1H",
+          "mode": "list",
+          "cachedResultName": "test-outreach-pt"
+        },
+        "text": "={{ '*Phase 1B - AUSactive Directory Import Complete*\\n\\nProfiles imported: ' + $json.imported + '\\nSkipped (already in GHL): ' + $json.skipped + '\\nFailed: ' + $json.failed + '\\nTotal found in directory: ' + $json.total + '\\n\\nAll contacts tagged: source:ausactive-directory, new-lead, bio-qualified\\nDate: ' + $json.runDate }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [1400, 400],
+      "id": "slack-phase1b",
+      "name": "Slack Report",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YNAnxXJwi9vTcB2h",
+          "name": "Slack Peakspan Outreach PT"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [{ "node": "Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "Config": {
+      "main": [
+        [{ "node": "Start AUSactive Scraper", "type": "main", "index": 0 }]
+      ]
+    },
+    "Start AUSactive Scraper": {
+      "main": [
+        [{ "node": "Wait 15 Minutes", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait 15 Minutes": {
+      "main": [
+        [{ "node": "Fetch and Clean Results", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch and Clean Results": {
+      "main": [
+        [{ "node": "Import to GHL", "type": "main", "index": 0 }]
+      ]
+    },
+    "Import to GHL": {
+      "main": [
+        [{ "node": "Slack Report", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "instanceId": "a2945d7afcd72eea07487deb91759681c87da7f2e7a0fe0acaa8976aa66ec446"
+  },
+  "tags": []
+}

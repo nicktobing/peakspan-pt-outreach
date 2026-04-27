@@ -1,0 +1,194 @@
+{
+  "name": "Phase 2C - Like and Comment Round 1 (Mon)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "sched-phase2c",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "APIFY_API_TOKEN",
+              "value": "REPLACE_WITH_APIFY_API_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "IG_COOKIES",
+              "value": "REPLACE_WITH_COOKIE_JSON_ARRAY",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "OPENAI_API_KEY",
+              "value": "REPLACE_WITH_OPENAI_API_KEY",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg-phase2c",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [400, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\nvar igCookiesRaw = config.IG_COOKIES || '[]';\nvar igCookies = (typeof igCookiesRaw === 'string') ? JSON.parse(igCookiesRaw) : igCookiesRaw;\nvar BATCH_SIZE = 10;\n\nvar ghlHeaders = {\n  'Authorization': 'Bearer REPLACE_WITH_GHL_API_TOKEN',\n  'Content-Type': 'application/json',\n  'Version': '2021-07-28'\n};\nvar locationId = 'KM3KkAQFgG3bByTZmWLL';\nvar today = new Date().toISOString().split('T')[0];\n\nvar allContacts = [];\ntry {\n  var res = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://services.leadconnectorhq.com/contacts/search',\n    headers: ghlHeaders,\n    body: JSON.stringify({\n      locationId: locationId,\n      pageLimit: 100,\n      filters: [{ field: 'tags', operator: 'contains', value: 'ig-followed' }]\n    })\n  });\n  allContacts = res.contacts || [];\n} catch (e) {\n  return [{ json: { status: 'GHL error: ' + e.message, toEngageContacts: [], datasetId: '', likeRunId: '', scraperRunId: '', runDate: today } }];\n}\n\nvar toEngage = [];\nfor (var i = 0; i < allContacts.length; i++) {\n  var c = allContacts[i];\n  var tags = c.tags || [];\n  var isLiked = false;\n  for (var t = 0; t < tags.length; t++) {\n    if (tags[t] === 'ig-liked') { isLiked = true; }\n  }\n  if (isLiked) { continue; }\n  var website = c.website || '';\n  var match = website.match(/instagram\\.com\\/([a-zA-Z0-9._]+)/);\n  if (!match) { continue; }\n  toEngage.push({\n    contactId: c.id,\n    name: c.firstName || c.lastName || '',\n    username: match[1],\n    tags: tags\n  });\n  if (toEngage.length >= BATCH_SIZE) { break; }\n}\n\nif (toEngage.length === 0) {\n  return [{ json: { status: 'No contacts ready for engagement today', toEngageContacts: [], datasetId: '', likeRunId: '', scraperRunId: '', runDate: today } }];\n}\n\nvar usernames = [];\nvar profileUrls = [];\nfor (var j = 0; j < toEngage.length; j++) {\n  usernames.push(toEngage[j].username);\n  profileUrls.push('https://www.instagram.com/' + toEngage[j].username + '/');\n}\n\n// FIX: Start like actor FIRST, tag contacts AFTER\nvar likeRunId = '';\ntry {\n  var likeRes = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.apify.com/v2/acts/am_production~instagram-posts-auto-like-tool/runs?token=' + apifyToken,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      instagram_cookies: igCookies,\n      influencers: usernames\n    })\n  });\n  var likeData = likeRes.data || likeRes;\n  likeRunId = likeData.id || '';\n} catch (e) {}\n\n// FIX: Tag contacts and build updatedTags for next node AFTER actor starts\nvar toEngageWithUpdatedTags = [];\nfor (var p = 0; p < toEngage.length; p++) {\n  var newTags = [];\n  for (var q = 0; q < toEngage[p].tags.length; q++) {\n    newTags.push(toEngage[p].tags[q]);\n  }\n  newTags.push('ig-liked');\n  newTags.push('liked-date:' + today);\n  try {\n    await this.helpers.httpRequest({\n      method: 'PUT',\n      url: 'https://services.leadconnectorhq.com/contacts/' + toEngage[p].contactId,\n      headers: ghlHeaders,\n      body: JSON.stringify({ tags: newTags })\n    });\n  } catch (e) {}\n  // Pass updatedTags to next node so comment node doesn't overwrite ig-liked\n  toEngageWithUpdatedTags.push({\n    contactId: toEngage[p].contactId,\n    name: toEngage[p].name,\n    username: toEngage[p].username,\n    tags: newTags\n  });\n}\n\nvar datasetId = '';\nvar scraperRunId = '';\nvar scrapeError = '';\ntry {\n  var scrapeRes = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.apify.com/v2/acts/apify~instagram-scraper/runs?token=' + apifyToken,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      directUrls: profileUrls,\n      resultsType: 'posts',\n      resultsLimit: 3,\n      addParentData: false\n    })\n  });\n  var scrapeData = scrapeRes.data || scrapeRes;\n  datasetId = scrapeData.defaultDatasetId || '';\n  scraperRunId = scrapeData.id || '';\n} catch (e) {\n  scrapeError = e.message || String(e);\n}\n\nreturn [{ json: {\n  status: scrapeError ? ('Scraper error: ' + scrapeError) : 'Engagement started - waiting for post data',\n  toEngageContacts: toEngageWithUpdatedTags,\n  datasetId: datasetId,\n  likeRunId: likeRunId,\n  scraperRunId: scraperRunId,\n  runDate: today\n} }];\n"
+      },
+      "id": "engage-phase2c",
+      "name": "Like Posts and Start Scraper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 400]
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 3
+      },
+      "id": "wait-phase2c",
+      "name": "Wait 3 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [800, 400],
+      "webhookId": "wait-phase2c-1"
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\nvar openaiKey = config.OPENAI_API_KEY || '';\nvar igCookiesRaw = config.IG_COOKIES || '[]';\nvar igCookies = (typeof igCookiesRaw === 'string') ? JSON.parse(igCookiesRaw) : igCookiesRaw;\n\nvar datasetId = $json.datasetId || '';\nvar toEngageContacts = $json.toEngageContacts || [];\nvar runDate = $json.runDate || new Date().toISOString().split('T')[0];\nvar likeRunId = $json.likeRunId || '';\nvar scraperRunId = $json.scraperRunId || '';\nvar commentRunIds = [];\n\nvar ghlHeaders = {\n  'Authorization': 'Bearer REPLACE_WITH_GHL_API_TOKEN',\n  'Content-Type': 'application/json',\n  'Version': '2021-07-28'\n};\n\nvar FALLBACK_COMMENTS = [\n  'That programming looks legitimately solid',\n  'Your clients are lucky honestly',\n  'Clean technique on that one',\n  'This is the kind of training I want to try',\n  'Good to see real work posted'\n];\n\nif (toEngageContacts.length === 0) {\n  return [{ json: { engageSummary: $json.status || 'No contacts', engageCount: 0, engagedAccounts: 'None', runDate: runDate } }];\n}\n\nvar posts = [];\nif (datasetId) {\n  try {\n    var dataRes = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.apify.com/v2/datasets/' + datasetId + '/items?token=' + apifyToken + '&limit=100'\n    });\n    posts = Array.isArray(dataRes) ? dataRes : [];\n  } catch (e) {}\n}\n\nvar postByUsername = {};\nfor (var i = 0; i < posts.length; i++) {\n  var post = posts[i];\n  var uname = post.ownerUsername || '';\n  if (!uname || postByUsername[uname]) { continue; }\n  var shortCode = post.shortCode || '';\n  if (shortCode) {\n    postByUsername[uname] = {\n      url: 'https://www.instagram.com/p/' + shortCode + '/',\n      caption: (post.caption || '').substring(0, 400),\n      hashtags: (post.hashtags || []).slice(0, 5).join(' ')\n    };\n  }\n}\n\nif (Object.keys(postByUsername).length === 0) {\n  return [{ json: { engageSummary: 'No post URLs found - scraper may need more time', engageCount: 0, engagedAccounts: 'None', runDate: runDate } }];\n}\n\nvar engagedLines = [];\nvar engageCount = 0;\n\nfor (var j = 0; j < toEngageContacts.length; j++) {\n  var contact = toEngageContacts[j];\n  var postData = postByUsername[contact.username] || null;\n  if (!postData) { continue; }\n\n  var aiComment = '';\n  var captionContext = postData.caption || postData.hashtags || '';\n\n  if (captionContext && openaiKey) {\n    var systemPrompt = 'You write short Instagram comments that sound like a real Australian person casually scrolling their feed. Never sound like a brand, marketer, or AI. No corporate language. No hollow compliments. Tone: direct, genuine, occasionally dry - like a real person talking to a fellow PT. Rules: Max 10 words. 1 sentence only. NEVER use these words: inspiring, amazing, love this, so good, crushing it, killing it, goals, wow, incredible, phenomenal. No hashtags. No @ mentions. No selling. No brand mentions. Max 1 emoji and only if it fits naturally - do not force it. Vary the opening every single time. Never start with Love or Great or Amazing or This. Sound like you are reacting to what you actually saw in the post not just complimenting their existence. Output ONLY the comment text with no quotes around it.';\n    var userPrompt = 'Post caption: ' + captionContext + '\\n\\nWrite one short comment reacting to this specific post.';\n\n    try {\n      var aiRes = await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://api.openai.com/v1/chat/completions',\n        headers: {\n          'Authorization': 'Bearer ' + openaiKey,\n          'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({\n          model: 'gpt-4o-mini',\n          messages: [\n            { role: 'system', content: systemPrompt },\n            { role: 'user', content: userPrompt }\n          ],\n          temperature: 0.9,\n          max_tokens: 60\n        })\n      });\n      aiComment = (aiRes.choices[0].message.content || '').trim();\n    } catch (e) {\n      aiComment = '';\n    }\n  }\n\n  if (!aiComment) {\n    aiComment = FALLBACK_COMMENTS[j % FALLBACK_COMMENTS.length];\n  }\n\n  var commentStarted = false;\n  try {\n    var commentRes = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.apify.com/v2/acts/mikolabs~ig-post-reel-comment-bot/runs?token=' + apifyToken,\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({\n        postUrls: [{ url: postData.url }],\n        commentMessage: aiComment,\n        cookies: igCookies\n      })\n    });\n    commentStarted = true;\n    engageCount++;\n    engagedLines.push('@' + contact.username + ': \"' + aiComment + '\"');\n    var commentRunData = commentRes.data || commentRes;\n    if (commentRunData.id) { commentRunIds.push(commentRunData.id); }\n  } catch (e) {\n    engagedLines.push('@' + contact.username + ': FAILED - ' + (e.message || String(e)));\n  }\n\n  // FIX: Only tag ig-outreach-sent if comment bot actually started\n  // FIX: Use contact.tags which already includes ig-liked from previous node\n  if (commentStarted) {\n    var newTags = [];\n    for (var q = 0; q < contact.tags.length; q++) {\n      newTags.push(contact.tags[q]);\n    }\n    newTags.push('ig-comment-1');\n    newTags.push('comment-1-date:' + runDate);\n    try {\n      await this.helpers.httpRequest({\n        method: 'PUT',\n        url: 'https://services.leadconnectorhq.com/contacts/' + contact.contactId,\n        headers: ghlHeaders,\n        body: JSON.stringify({ tags: newTags })\n      });\n    } catch (e) {}\n  }\n}\n\nvar totalCostUsd = 0;\nvar runIdsToCheck = [];\nif (likeRunId) { runIdsToCheck.push(likeRunId); }\nif (scraperRunId) { runIdsToCheck.push(scraperRunId); }\nfor (var ri = 0; ri < commentRunIds.length; ri++) { runIdsToCheck.push(commentRunIds[ri]); }\nfor (var ci = 0; ci < runIdsToCheck.length; ci++) {\n  try {\n    var costRes = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.apify.com/v2/actor-runs/' + runIdsToCheck[ci] + '?token=' + apifyToken\n    });\n    var costData = costRes.data || costRes;\n    totalCostUsd += costData.usageTotalUsd || 0;\n  } catch (e) {}\n}\n\nreturn [{ json: {\n  engageSummary: 'Like + Comment Round 1 completed',\n  engageCount: engageCount,\n  engagedAccounts: engagedLines.join('\\n'),\n  runDate: runDate,\n  costUsd: totalCostUsd,\n  likeRunId: likeRunId,\n  scraperRunId: scraperRunId,\n  commentRunCount: commentRunIds.length\n} }];\n"
+      },
+      "id": "comment-phase2c",
+      "name": "Post Outreach Comments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AHYBX9W1H",
+          "mode": "list",
+          "cachedResultName": "test-outreach-pt"
+        },
+        "text": "={{ '*Phase 2C - Like + Comment Round 1 (' + $json.runDate + ')*\\nStatus: ' + $json.engageSummary + '\\n\\nPTs engaged: ' + $json.engageCount + '\\nActions: Liked post + posted comment (round 1 of 3)\\nApify Cost: $' + ($json.costUsd || 0) + '\\n\\nComments posted:\\n' + $json.engagedAccounts }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [1200, 300],
+      "id": "slack-phase2c",
+      "name": "Slack Report",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YNAnxXJwi9vTcB2h",
+          "name": "Slack Peakspan Outreach PT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var prev = $input.first().json;\nreturn [{ json: {\n  'Date': prev.runDate || '',\n  'Workflow': 'Phase 2C - Like + Comment Round 1',\n  'Actor': 'like + scraper + comment-bot (' + (prev.commentRunCount || 0) + ' comments)',\n  'Run ID': (prev.likeRunId || '') + ' / ' + (prev.scraperRunId || ''),\n  'Actions Attempted': prev.engageCount || 0,\n  'Actions Succeeded': prev.engageCount || 0,\n  'Cost USD': prev.costUsd || 0,\n  'Status': prev.engageSummary || ''\n} }];"
+      },
+      "id": "cost-fmt-phase2c",
+      "name": "Format Cost Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 520]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1l0r8aKXnNQNCkjPDzFCCMb1W3gh3TPcKuwEV_U3Wm7A",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "cost-sheet-phase2c",
+      "name": "Log Cost to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1400, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hSfPX8cXdmLAnLjm",
+          "name": "Hello Google API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [{ "node": "Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "Config": {
+      "main": [
+        [{ "node": "Like Posts and Start Scraper", "type": "main", "index": 0 }]
+      ]
+    },
+    "Like Posts and Start Scraper": {
+      "main": [
+        [{ "node": "Wait 3 Minutes", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait 3 Minutes": {
+      "main": [
+        [{ "node": "Post Outreach Comments", "type": "main", "index": 0 }]
+      ]
+    },
+    "Post Outreach Comments": {
+      "main": [
+        [
+          { "node": "Slack Report", "type": "main", "index": 0 },
+          { "node": "Format Cost Row", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Cost Row": {
+      "main": [
+        [{ "node": "Log Cost to Sheet", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "instanceId": "a2945d7afcd72eea07487deb91759681c87da7f2e7a0fe0acaa8976aa66ec446"
+  },
+  "tags": []
+}

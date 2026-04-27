@@ -1,0 +1,188 @@
+{
+  "name": "Phase 2B - Batch Follow v3",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8,20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "sched-phase2b",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "APIFY_API_TOKEN",
+              "value": "REPLACE_WITH_APIFY_API_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "IG_SESSION_ID",
+              "value": "REPLACE_WITH_YOUR_SESSIONID_VALUE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg-phase2b",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [400, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\nvar sessionId = config.IG_SESSION_ID || '';\nvar MAX_FOLLOWS = 13;\n\nvar ghlHeaders = {\n  'Authorization': 'Bearer REPLACE_WITH_GHL_API_TOKEN',\n  'Content-Type': 'application/json',\n  'Version': '2021-07-28'\n};\nvar locationId = 'KM3KkAQFgG3bByTZmWLL';\nvar today = new Date().toISOString().split('T')[0];\n\nvar allContacts = [];\ntry {\n  var res = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://services.leadconnectorhq.com/contacts/search',\n    headers: ghlHeaders,\n    body: JSON.stringify({\n      locationId: locationId,\n      pageLimit: 100,\n      filters: [{ field: 'tags', operator: 'contains', value: 'qualified' }]\n    })\n  });\n  allContacts = res.contacts || [];\n} catch (e) {\n  return [{ json: { followMessage: 'GHL error: ' + e.message, followAttempted: 0, followSuccess: 0, followFailed: 0, followedAccounts: 'None', apifyRunId: '', runDate: today, toFollowContacts: [] } }];\n}\n\nvar toFollow = [];\nfor (var i = 0; i < allContacts.length; i++) {\n  var c = allContacts[i];\n  var tags = c.tags || [];\n  var isFollowed = false;\n  for (var t = 0; t < tags.length; t++) {\n    if (tags[t] === 'ig-followed') { isFollowed = true; }\n  }\n  if (isFollowed) { continue; }\n  var website = c.website || '';\n  var match = website.match(/instagram\\.com\\/([a-zA-Z0-9._]+)/);\n  if (!match) { continue; }\n  toFollow.push({ contactId: c.id, name: c.firstName || c.lastName || '', username: match[1], tags: tags });\n  if (toFollow.length >= MAX_FOLLOWS) { break; }\n}\n\nif (toFollow.length === 0) {\n  return [{ json: { followMessage: 'No new qualified contacts to follow today', followAttempted: 0, followSuccess: 0, followFailed: 0, followedAccounts: 'None', apifyRunId: '', runDate: today, toFollowContacts: [] } }];\n}\n\nvar usernames = [];\nfor (var j = 0; j < toFollow.length; j++) {\n  usernames.push(toFollow[j].username);\n}\n\nvar runId = '';\nvar actorError = '';\ntry {\n  var runRes = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.apify.com/v2/acts/synk~instagram-auto-follow/runs?token=' + apifyToken,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      sessionCookie: sessionId,\n      usersToFollow: usernames,\n      accountType: 'aged',\n      maxFollowsPerRun: MAX_FOLLOWS,\n      delayBetweenFollows: 45,\n      randomDelayVariation: 20\n    })\n  });\n  var runData = runRes.data || runRes;\n  runId = runData.id || '';\n} catch (e) {\n  actorError = e.message || String(e);\n}\n\nif (actorError || !runId) {\n  return [{ json: {\n    followMessage: 'Apify actor failed to start - no contacts tagged: ' + (actorError || 'no run ID returned'),\n    followAttempted: usernames.length,\n    followSuccess: 0,\n    followFailed: usernames.length,\n    followedAccounts: usernames.join(', '),\n    apifyRunId: '',\n    runDate: today,\n    toFollowContacts: []\n  } }];\n}\n\nreturn [{ json: {\n  followMessage: 'Actor started - waiting to confirm completion',\n  followAttempted: usernames.length,\n  followSuccess: 0,\n  followFailed: 0,\n  followedAccounts: usernames.join(', '),\n  apifyRunId: runId,\n  runDate: today,\n  toFollowContacts: toFollow\n} }];\n"
+      },
+      "id": "bf-phase2b",
+      "name": "Start Follow Actor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 400]
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 35
+      },
+      "id": "wait-phase2b",
+      "name": "Wait 35 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [800, 400],
+      "webhookId": "wait-phase2b-1"
+    },
+    {
+      "parameters": {
+        "jsCode": "var config = $(\"Config\").first().json;\nvar apifyToken = config.APIFY_API_TOKEN || '';\n\nvar prev = $input.first().json;\nvar runId = prev.apifyRunId || '';\nvar runDate = prev.runDate || new Date().toISOString().split('T')[0];\nvar toFollowContacts = prev.toFollowContacts || [];\nvar followedAccounts = prev.followedAccounts || 'None';\nvar followAttempted = prev.followAttempted || 0;\n\nif (!runId || toFollowContacts.length === 0) {\n  return [{ json: {\n    followMessage: prev.followMessage || 'No run to check',\n    followAttempted: followAttempted,\n    followSuccess: 0,\n    followFailed: followAttempted,\n    followedAccounts: followedAccounts,\n    apifyRunId: runId,\n    runDate: runDate,\n    costUsd: 0\n  } }];\n}\n\nvar ghlHeaders = {\n  'Authorization': 'Bearer REPLACE_WITH_GHL_API_TOKEN',\n  'Content-Type': 'application/json',\n  'Version': '2021-07-28'\n};\n\nvar runStatus = '';\nvar statusError = '';\nvar costUsd = 0;\n\ntry {\n  var statusRes = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.apify.com/v2/actor-runs/' + runId + '?token=' + apifyToken\n  });\n  var statusData = statusRes.data || statusRes;\n  runStatus = statusData.status || '';\n  costUsd = statusData.usageTotalUsd || 0;\n} catch (e) {\n  statusError = e.message || String(e);\n}\n\nif (statusError) {\n  return [{ json: {\n    followMessage: 'Could not check run status: ' + statusError + ' - contacts NOT tagged',\n    followAttempted: followAttempted,\n    followSuccess: 0,\n    followFailed: followAttempted,\n    followedAccounts: followedAccounts,\n    apifyRunId: runId,\n    runDate: runDate,\n    costUsd: 0\n  } }];\n}\n\nif (runStatus !== 'SUCCEEDED') {\n  return [{ json: {\n    followMessage: 'Actor did not succeed (status: ' + runStatus + ') - contacts NOT tagged. Check Apify run: ' + runId,\n    followAttempted: followAttempted,\n    followSuccess: 0,\n    followFailed: followAttempted,\n    followedAccounts: followedAccounts,\n    apifyRunId: runId,\n    runDate: runDate,\n    costUsd: costUsd\n  } }];\n}\n\nfor (var p = 0; p < toFollowContacts.length; p++) {\n  var newTags = [];\n  for (var q = 0; q < toFollowContacts[p].tags.length; q++) {\n    newTags.push(toFollowContacts[p].tags[q]);\n  }\n  newTags.push('ig-followed');\n  newTags.push('followed-date:' + runDate);\n  try {\n    await this.helpers.httpRequest({\n      method: 'PUT',\n      url: 'https://services.leadconnectorhq.com/contacts/' + toFollowContacts[p].contactId,\n      headers: ghlHeaders,\n      body: JSON.stringify({ tags: newTags })\n    });\n  } catch (e) {}\n}\n\nreturn [{ json: {\n  followMessage: 'Follows confirmed and contacts tagged successfully',\n  followAttempted: followAttempted,\n  followSuccess: followAttempted,\n  followFailed: 0,\n  followedAccounts: followedAccounts,\n  apifyRunId: runId,\n  runDate: runDate,\n  costUsd: costUsd\n} }];\n"
+      },
+      "id": "check-phase2b",
+      "name": "Check Run and Tag Contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AHYBX9W1H",
+          "mode": "list",
+          "cachedResultName": "test-outreach-pt"
+        },
+        "text": "={{ '*Phase 2B - Follow Report (' + $json.runDate + ')*\\nStatus: ' + $json.followMessage + '\\n\\nNew PTs followed: ' + $json.followSuccess + '\\nFailed: ' + $json.followFailed + '\\n\\nAccounts:\\n' + $json.followedAccounts + '\\n\\nApify Run ID: ' + ($json.apifyRunId || 'N/A') + '\\nApify Cost: $' + ($json.costUsd || 0) }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [1200, 300],
+      "id": "slack-phase2b",
+      "name": "Slack Report",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YNAnxXJwi9vTcB2h",
+          "name": "Slack Peakspan Outreach PT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var prev = $input.first().json;\nreturn [{ json: {\n  'Date': prev.runDate || '',\n  'Workflow': 'Phase 2B - Follow',\n  'Actor': 'synk~instagram-auto-follow',\n  'Run ID': prev.apifyRunId || '',\n  'Actions Attempted': prev.followAttempted || 0,\n  'Actions Succeeded': prev.followSuccess || 0,\n  'Cost USD': prev.costUsd || 0,\n  'Status': prev.followMessage || ''\n} }];"
+      },
+      "id": "cost-fmt-phase2b",
+      "name": "Format Cost Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 520]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1l0r8aKXnNQNCkjPDzFCCMb1W3gh3TPcKuwEV_U3Wm7A",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "cost-sheet-phase2b",
+      "name": "Log Cost to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1400, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hSfPX8cXdmLAnLjm",
+          "name": "Hello Google API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [{ "node": "Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "Config": {
+      "main": [
+        [{ "node": "Start Follow Actor", "type": "main", "index": 0 }]
+      ]
+    },
+    "Start Follow Actor": {
+      "main": [
+        [{ "node": "Wait 35 Minutes", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait 35 Minutes": {
+      "main": [
+        [{ "node": "Check Run and Tag Contacts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Run and Tag Contacts": {
+      "main": [
+        [
+          { "node": "Slack Report", "type": "main", "index": 0 },
+          { "node": "Format Cost Row", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Cost Row": {
+      "main": [
+        [{ "node": "Log Cost to Sheet", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "instanceId": "a2945d7afcd72eea07487deb91759681c87da7f2e7a0fe0acaa8976aa66ec446"
+  },
+  "tags": []
+}
