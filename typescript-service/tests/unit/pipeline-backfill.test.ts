@@ -31,6 +31,10 @@ function ledger() {
         state.authorizationConsumedContactId) return false;
       state = { ...state, authorizationConsumedContactId: contactId, uncertainSince: new Date().toISOString() }; return true;
     }),
+    releaseRejectedAuthorization: vi.fn(async (_planId: string, contactId: string, leaseId: string) => {
+      if (state.leaseId !== leaseId || state.currentContactId !== contactId) return false;
+      state = { ...state, writeAttemptedContactId: null, authorizationConsumedContactId: null, uncertainSince: null }; return true;
+    }),
     markWriteAttempted: vi.fn(async (_planId: string, contactId: string, leaseId: string) => {
       if (state.leaseId !== leaseId || state.currentContactId !== contactId || state.writeAttemptedContactId) return false;
       state = { ...state, writeAttemptedContactId: contactId, authorizationConsumedContactId: null,
@@ -58,12 +62,16 @@ function ledger() {
 }
 function deps() {
   const store = ledger(); const opportunities = new Map<string, Opportunity>();
+  const topology = vi.fn<(item: typeof plan.items[number], pipelineId: string) => Promise<boolean>>(async () => true);
   return { previewPlan: vi.fn(async () => plan), ledger: store,
     list: vi.fn(async (contactId: string) => opportunities.has(contactId) ? [opportunities.get(contactId)!] : []),
     stage: vi.fn(async (contactId: string) => plan.items.find((item) => item.contactId === contactId)?.stageName ?? null),
+    topology,
     create: vi.fn(async (_planId: string, _leaseId: string, input: OpportunityInput) => {
+      const planned = plan.items.find((value) => value.contactId === input.contactId)!;
+      if (!(await topology(planned, plan.pipelineId))) throw new ProviderError("ghl", "permanent", 400);
       if (!(await store.consumeCreateAuthorization(_planId, input.contactId, _leaseId))) throw new Error("write not authorized");
-      const item = plan.items.find((value) => value.contactId === input.contactId)!;
+      const item = planned;
       opportunities.set(input.contactId, exact(item, `opp-${input.contactId}`)); return { id: `opp-${input.contactId}` }; }),
     get: vi.fn(async (id: string) => { const contactId = id.replace(/^opp-/, ""); const item = plan.items.find((value) => value.contactId === contactId)!;
       return exact(item, id); }) };
@@ -133,6 +141,31 @@ describe("approved pipeline creation backfill", () => {
       status: "stopped", reason: "precondition_changed", created: [], uncertainContactId: "contact-0",
     });
     expect(dependencies.create).not.toHaveBeenCalled();
+  });
+  it("stops when the approved pipeline stage topology changes before the write", async () => {
+    const dependencies = deps(); dependencies.topology.mockResolvedValueOnce(false);
+    await expect(createApprovedPipelineOpportunities(approval, dependencies)).resolves.toMatchObject({
+      status: "stopped", reason: "precondition_changed", created: [], uncertainContactId: "contact-0",
+    });
+    expect(dependencies.create).not.toHaveBeenCalled();
+  });
+  it("rechecks topology in final authorization and safely resumes after rejection", async () => {
+    const dependencies = deps(); dependencies.topology.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await expect(createApprovedPipelineOpportunities(approval, dependencies)).resolves.toMatchObject({
+      status: "stopped", reason: "provider_rejected", created: [],
+    });
+    await expect(createApprovedPipelineOpportunities(approval, dependencies)).resolves.toMatchObject({ status: "complete" });
+  });
+  it("releases a definitive provider rejection so an explicit same-plan resume can retry", async () => {
+    const dependencies = deps(); dependencies.create.mockImplementationOnce(async (planId, leaseId, input) => {
+      await dependencies.ledger.consumeCreateAuthorization(planId, input.contactId, leaseId);
+      throw new ProviderError("ghl", "permanent", 400);
+    });
+    await expect(createApprovedPipelineOpportunities(approval, dependencies)).resolves.toMatchObject({
+      status: "stopped", reason: "provider_rejected", created: [],
+    });
+    await expect(createApprovedPipelineOpportunities(approval, dependencies)).resolves.toMatchObject({ status: "complete" });
+    expect(dependencies.create).toHaveBeenCalledTimes(11);
   });
   it("rejects any additional opportunity discovered after a successful create", async () => {
     const dependencies = deps(); const expected = exact(plan.items[0], "opp-contact-0");

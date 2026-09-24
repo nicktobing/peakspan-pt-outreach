@@ -65,6 +65,14 @@ export class PipelineBackfillRepository {
     )).returning({ id: workflowRuns.id });
     return Boolean(row);
   }
+  async releaseRejectedAuthorization(planId: string, contactId: string, leaseId: string) {
+    const [row] = await this.db.update(workflowRuns).set({ result: sql`${workflowRuns.result} ||
+      '{"writeAttemptedContactId":null,"authorizationConsumedContactId":null,"uncertainSince":null}'::jsonb`,
+      updatedAt: new Date() }).where(and(eq(workflowRuns.workflow, workflow), eq(workflowRuns.scheduledWindow, planId),
+      eq(workflowRuns.status, "running"), sql`${workflowRuns.result}->>'leaseId' = ${leaseId}`,
+      sql`${workflowRuns.result}->>'currentContactId' = ${contactId}`)).returning({ id: workflowRuns.id });
+    return Boolean(row);
+  }
   async markWriteAttempted(planId: string, contactId: string, leaseId: string) {
     const [row] = await this.db.update(workflowRuns).set({ result: sql`${workflowRuns.result} ||
       ${JSON.stringify({ writeAttemptedContactId: contactId, authorizationConsumedContactId: null,

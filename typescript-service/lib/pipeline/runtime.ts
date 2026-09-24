@@ -5,7 +5,8 @@ import { getDb } from "../db/client";
 import { PipelineBackfillRepository } from "../db/pipeline-backfill";
 import { directoryRecords } from "../leads/runtime";
 import { createPipelinePlan, type PipelineCreationPlan } from "./backfill-contracts";
-import { buildPipelineReconciliationPreview, desiredAffiliateStage, PT_AFFILIATE_PIPELINE } from "./reconciliation";
+import { buildPipelineReconciliationPreview, desiredAffiliateStage, PT_AFFILIATE_PIPELINE,
+  PT_AFFILIATE_STAGES } from "./reconciliation";
 
 function required(name: "GHL_API_TOKEN" | "GHL_LOCATION_ID") {
   const value = process.env[name]; if (!value) throw new Error(`Missing ${name}`); return value;
@@ -57,12 +58,14 @@ type OpportunityInput = { pipelineId: string; pipelineStageId: string; contactId
 type Opportunity = { id: string; contactId?: string; pipelineId?: string; pipelineStageId?: string;
   locationId?: string; name?: string; status?: string };
 type BackfillLedger = Pick<PipelineBackfillRepository, "claim" | "find" | "resume" | "progress" | "beginContact" | "canCreate" |
-  "consumeCreateAuthorization" | "markWriteAttempted" | "clearContact" | "record" | "stop" | "complete">;
+  "consumeCreateAuthorization" | "releaseRejectedAuthorization" | "markWriteAttempted" | "clearContact" | "record" | "stop" |
+  "complete">;
 type BackfillDependencies = {
   previewPlan(): Promise<PipelineCreationPlan | null>;
   ledger: BackfillLedger;
   list(contactId: string, pipelineId: string): Promise<Opportunity[]>;
   stage(contactId: string): Promise<string | null>;
+  topology(item: PipelineCreationPlan["items"][number], pipelineId: string): Promise<boolean>;
   get(opportunityId: string): Promise<Opportunity>;
   create(planId: string, leaseId: string, input: OpportunityInput): Promise<Opportunity>;
 };
@@ -75,13 +78,23 @@ function productionBackfillDependencies(): BackfillDependencies {
   const writer = new GhlClient(token, locationId, { authorizeWrite: async () => pending !== undefined &&
     (await list(pending.input.contactId, pending.input.pipelineId)).length === 0 &&
     desiredAffiliateStage((await reader.getContact(pending.input.contactId)).tags) === pending.stageName &&
+    await validTopology(reader, pending.input.pipelineId, pending.input.pipelineStageId, pending.stageName) &&
     await ledger.consumeCreateAuthorization(pending.planId, pending.input.contactId, pending.leaseId) });
   return { previewPlan: async () => (await readPipelineReconciliation()).plan, ledger, list,
     stage: async (contactId) => { try { return desiredAffiliateStage((await reader.getContact(contactId)).tags); } catch { return null; } },
+    topology: (item, pipelineId) => validTopology(reader, pipelineId, item.stageId, item.stageName),
     get: (opportunityId) => reader.getOpportunity(opportunityId),
     create: async (planId, leaseId, input) => { const item = (await ledger.progress(planId)).plan.items.find((value) => value.contactId === input.contactId);
       if (!item) throw new Error("Unknown pipeline plan contact"); pending = { planId, leaseId, input, stageName: item.stageName };
       try { return await writer.createOpportunity(input); } finally { pending = undefined; } } };
+}
+
+async function validTopology(client: GhlClient, pipelineId: string, stageId: string, stageName: string) {
+  const matches = (await client.listPipelines()).filter((pipeline) => pipeline.id === pipelineId && pipeline.name === PT_AFFILIATE_PIPELINE);
+  if (matches.length !== 1) return false; const pipeline = matches[0];
+  return pipeline.stages.length === PT_AFFILIATE_STAGES.length &&
+    pipeline.stages.every((stage, index) => stage.name === PT_AFFILIATE_STAGES[index]) &&
+    pipeline.stages.some((stage) => stage.id === stageId && stage.name === stageName);
 }
 
 function exactOpportunity(value: Opportunity, plan: PipelineCreationPlan, item: PipelineCreationPlan["items"][number]) {
@@ -143,6 +156,9 @@ export async function createApprovedPipelineOpportunities(raw: PipelineCreationA
     let stage: string | null;
     try { stage = await deps.stage(item.contactId); } catch { return stop(item.contactId, "read_failed"); }
     if (stage !== item.stageName) return stop(item.contactId, "precondition_changed");
+    let topology: boolean;
+    try { topology = await deps.topology(item, plan.pipelineId); } catch { return stop(item.contactId, "read_failed"); }
+    if (!topology) return stop(item.contactId, "precondition_changed");
     try { if (!(await deps.ledger.markWriteAttempted(plan.id, item.contactId, leaseId))) return stop(item.contactId, "precondition_changed"); }
     catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
       created, uncertainContactId: item.contactId }; }
@@ -151,8 +167,15 @@ export async function createApprovedPipelineOpportunities(raw: PipelineCreationA
     try {
       response = await deps.create(plan.id, leaseId, input);
     } catch (error) {
-      if (!(error instanceof ProviderError) || error.kind !== "unknown_outcome") return stop(item.contactId, "provider_rejected");
-      return stop(item.contactId, "provider_unknown");
+      if (error instanceof ProviderError && error.kind === "unknown_outcome") return stop(item.contactId, "provider_unknown");
+      try {
+        if (!(await deps.ledger.releaseRejectedAuthorization(plan.id, item.contactId, leaseId))) {
+          return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
+            created, uncertainContactId: item.contactId };
+        }
+      } catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
+        created, uncertainContactId: item.contactId }; }
+      return stop(item.contactId, "provider_rejected");
     }
     let verified: Opportunity;
     try { verified = await deps.get(response.id); }
