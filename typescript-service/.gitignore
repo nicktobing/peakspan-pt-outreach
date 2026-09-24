@@ -1,0 +1,5 @@
+/.swc
+.vercel
+.env*
+!.env.example
+
