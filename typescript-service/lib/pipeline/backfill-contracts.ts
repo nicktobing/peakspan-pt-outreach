@@ -11,7 +11,9 @@ export const pipelineOutcomeSchema = z.object({ contactId: z.string(), opportuni
   evidence: z.enum(["response", "reconciled"]) }).strict();
 export const pipelineLedgerSchema = z.object({ version: z.literal(1), plan: pipelineCreationPlanSchema,
   currentContactId: z.string().nullable(), outcomes: z.array(pipelineOutcomeSchema),
-  uncertainContactId: z.string().nullable().optional() }).strict();
+  uncertainContactId: z.string().nullable().optional(), writeAttemptedContactId: z.string().nullable().optional(),
+  authorizationConsumedContactId: z.string().nullable().optional(), uncertainSince: z.string().datetime().nullable().optional(),
+  leaseId: z.string().uuid() }).strict();
 export type PipelineLedger = z.infer<typeof pipelineLedgerSchema>;
 
 export function createPipelinePlan(input: z.input<typeof pipelinePlanCoreSchema>) {

@@ -5,7 +5,7 @@ import { getDb } from "../db/client";
 import { PipelineBackfillRepository } from "../db/pipeline-backfill";
 import { directoryRecords } from "../leads/runtime";
 import { createPipelinePlan, type PipelineCreationPlan } from "./backfill-contracts";
-import { buildPipelineReconciliationPreview, PT_AFFILIATE_PIPELINE } from "./reconciliation";
+import { buildPipelineReconciliationPreview, desiredAffiliateStage, PT_AFFILIATE_PIPELINE } from "./reconciliation";
 
 function required(name: "GHL_API_TOKEN" | "GHL_LOCATION_ID") {
   const value = process.env[name]; if (!value) throw new Error(`Missing ${name}`); return value;
@@ -56,26 +56,31 @@ export type PipelineCreationApproval = z.infer<typeof pipelineCreationApprovalSc
 type OpportunityInput = { pipelineId: string; pipelineStageId: string; contactId: string; name: string };
 type Opportunity = { id: string; contactId?: string; pipelineId?: string; pipelineStageId?: string;
   locationId?: string; name?: string; status?: string };
-type BackfillLedger = Pick<PipelineBackfillRepository, "claim" | "find" | "progress" | "beginContact" | "canCreate" | "record" | "stop" | "complete">;
+type BackfillLedger = Pick<PipelineBackfillRepository, "claim" | "find" | "resume" | "progress" | "beginContact" | "canCreate" |
+  "consumeCreateAuthorization" | "markWriteAttempted" | "clearContact" | "record" | "stop" | "complete">;
 type BackfillDependencies = {
   previewPlan(): Promise<PipelineCreationPlan | null>;
   ledger: BackfillLedger;
   list(contactId: string, pipelineId: string): Promise<Opportunity[]>;
+  stage(contactId: string): Promise<string | null>;
   get(opportunityId: string): Promise<Opportunity>;
-  create(planId: string, input: OpportunityInput): Promise<Opportunity>;
+  create(planId: string, leaseId: string, input: OpportunityInput): Promise<Opportunity>;
 };
 
 function productionBackfillDependencies(): BackfillDependencies {
   const token = required("GHL_API_TOKEN"); const locationId = required("GHL_LOCATION_ID");
   const reader = new GhlClient(token, locationId); const ledger = new PipelineBackfillRepository(getDb());
-  let pending: { planId: string; input: OpportunityInput } | undefined;
+  let pending: { planId: string; leaseId: string; input: OpportunityInput; stageName: string } | undefined;
   const list = (contactId: string, pipelineId: string) => reader.listOpportunities({ contactId, pipelineId, status: "all" });
   const writer = new GhlClient(token, locationId, { authorizeWrite: async () => pending !== undefined &&
-    await ledger.canCreate(pending.planId, pending.input.contactId) &&
-    (await list(pending.input.contactId, pending.input.pipelineId)).length === 0 });
+    (await list(pending.input.contactId, pending.input.pipelineId)).length === 0 &&
+    desiredAffiliateStage((await reader.getContact(pending.input.contactId)).tags) === pending.stageName &&
+    await ledger.consumeCreateAuthorization(pending.planId, pending.input.contactId, pending.leaseId) });
   return { previewPlan: async () => (await readPipelineReconciliation()).plan, ledger, list,
+    stage: async (contactId) => { try { return desiredAffiliateStage((await reader.getContact(contactId)).tags); } catch { return null; } },
     get: (opportunityId) => reader.getOpportunity(opportunityId),
-    create: async (planId, input) => { pending = { planId, input };
+    create: async (planId, leaseId, input) => { const item = (await ledger.progress(planId)).plan.items.find((value) => value.contactId === input.contactId);
+      if (!item) throw new Error("Unknown pipeline plan contact"); pending = { planId, leaseId, input, stageName: item.stageName };
       try { return await writer.createOpportunity(input); } finally { pending = undefined; } } };
 }
 
@@ -86,55 +91,84 @@ function exactOpportunity(value: Opportunity, plan: PipelineCreationPlan, item: 
 
 export async function createApprovedPipelineOpportunities(raw: PipelineCreationApproval, deps = productionBackfillDependencies()) {
   const approval = pipelineCreationApprovalSchema.parse(raw); const existing = await deps.ledger.find(approval.planId);
-  if (existing) return { mode: "create_only" as const, status: "already_claimed" as const,
-    reason: "single_use_plan" as const, created: existing.outcomes, progress: existing };
-  const plan = await deps.previewPlan();
-  if (!plan || plan.id !== approval.planId) return { mode: "create_only" as const, status: "blocked" as const,
-    reason: "preview_changed" as const, created: [] as PipelineLedgerOutcome[] };
-  const claim = await deps.ledger.claim(plan);
-  if (!claim.acquired) return { mode: "create_only" as const, status: "already_claimed" as const,
-    reason: "single_use_plan" as const, created: claim.progress.outcomes, progress: claim.progress };
-  let created: PipelineLedgerOutcome[] = [];
+  let plan: PipelineCreationPlan; let progress = existing;
+  if (existing) {
+    if (existing.state === "succeeded") return { mode: "create_only" as const, status: "already_claimed" as const,
+      reason: "single_use_plan" as const, created: existing.outcomes, progress: existing };
+    const resumed = await deps.ledger.resume(approval.planId, new Date(Date.now() - 5 * 60_000));
+    if (!resumed.acquired) return { mode: "create_only" as const, status: "already_claimed" as const,
+      reason: "run_active" as const, created: resumed.progress.outcomes, progress: resumed.progress };
+    plan = resumed.progress.plan; progress = resumed.progress;
+  } else {
+    const fresh = await deps.previewPlan();
+    if (!fresh || fresh.id !== approval.planId) return { mode: "create_only" as const, status: "blocked" as const,
+      reason: "preview_changed" as const, created: [] as PipelineLedgerOutcome[] };
+    plan = fresh; const claim = await deps.ledger.claim(plan); progress = claim.progress;
+    if (!claim.acquired) return { mode: "create_only" as const, status: "already_claimed" as const,
+      reason: "single_use_plan" as const, created: claim.progress.outcomes, progress: claim.progress };
+  }
+  const leaseId = progress.leaseId; let created: PipelineLedgerOutcome[] = progress.outcomes;
   const stop = async (contactId: string, reason: "precondition_changed" | "provider_unknown" | "provider_rejected" | "read_failed") => {
-    try { const progress = await deps.ledger.stop(plan.id, contactId, reason); created = progress.outcomes;
+    try { const progress = await deps.ledger.stop(plan.id, contactId, reason, leaseId); created = progress.outcomes;
       return { mode: "create_only" as const, status: "stopped" as const, reason, created, uncertainContactId: contactId }; }
     catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
       created, uncertainContactId: contactId }; }
   };
+  const uncertainContactId = progress.currentContactId ?? progress.uncertainContactId;
+  if (uncertainContactId && !created.some((outcome) => outcome.contactId === uncertainContactId)) {
+    const item = plan.items.find((value) => value.contactId === uncertainContactId);
+    if (!item) return stop(uncertainContactId, "precondition_changed");
+    if (progress.authorizationConsumedContactId === item.contactId) {
+      const settled = progress.uncertainSince && Date.parse(progress.uncertainSince) <= Date.now() - 5 * 60_000;
+      if (!settled) return stop(item.contactId, "provider_unknown");
+      let opportunities: Opportunity[];
+      try { opportunities = await deps.list(item.contactId, plan.pipelineId); } catch { return stop(item.contactId, "read_failed"); }
+      if (opportunities.length === 1 && exactOpportunity(opportunities[0], plan, item)) {
+        const outcome = { contactId: item.contactId, opportunityId: opportunities[0].id, evidence: "reconciled" as const };
+        try { await deps.ledger.record(plan.id, outcome, leaseId); created = (await deps.ledger.progress(plan.id)).outcomes; }
+        catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
+          created: [...created, outcome], uncertainContactId: item.contactId }; }
+      } else return stop(item.contactId, "provider_unknown");
+    } else if (!(await deps.ledger.clearContact(plan.id, item.contactId, leaseId))) return stop(item.contactId, "precondition_changed");
+  }
   for (const item of plan.items) {
-    try { if (!(await deps.ledger.beginContact(plan.id, item.contactId))) return stop(item.contactId, "precondition_changed"); }
+    if (created.some((outcome) => outcome.contactId === item.contactId)) continue;
+    try { if (!(await deps.ledger.beginContact(plan.id, item.contactId, leaseId))) return stop(item.contactId, "precondition_changed"); }
     catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
       created, uncertainContactId: item.contactId }; }
     let existing: Opportunity[];
     try { existing = await deps.list(item.contactId, plan.pipelineId); }
     catch { return stop(item.contactId, "read_failed"); }
     if (existing.length !== 0) return stop(item.contactId, "precondition_changed");
+    let stage: string | null;
+    try { stage = await deps.stage(item.contactId); } catch { return stop(item.contactId, "read_failed"); }
+    if (stage !== item.stageName) return stop(item.contactId, "precondition_changed");
+    try { if (!(await deps.ledger.markWriteAttempted(plan.id, item.contactId, leaseId))) return stop(item.contactId, "precondition_changed"); }
+    catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
+      created, uncertainContactId: item.contactId }; }
     const input = { pipelineId: plan.pipelineId, pipelineStageId: item.stageId, contactId: item.contactId, name: item.opportunityName };
     let response: Opportunity;
     try {
-      response = await deps.create(plan.id, input);
+      response = await deps.create(plan.id, leaseId, input);
     } catch (error) {
       if (!(error instanceof ProviderError) || error.kind !== "unknown_outcome") return stop(item.contactId, "provider_rejected");
-      let matches: Opportunity[];
-      try { matches = (await deps.list(item.contactId, plan.pipelineId)).filter((value) => exactOpportunity(value, plan, item)); }
-      catch { return stop(item.contactId, "read_failed"); }
-      if (matches.length !== 1) return stop(item.contactId, "provider_unknown");
-      const outcome = { contactId: item.contactId, opportunityId: matches[0].id, evidence: "reconciled" as const };
-      try { await deps.ledger.record(plan.id, outcome); created = (await deps.ledger.progress(plan.id)).outcomes; }
-      catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
-        created: [...created, outcome], uncertainContactId: item.contactId }; }
-      continue;
+      return stop(item.contactId, "provider_unknown");
     }
     let verified: Opportunity;
     try { verified = await deps.get(response.id); }
     catch { return stop(item.contactId, "read_failed"); }
     if (verified.id !== response.id || !exactOpportunity(verified, plan, item)) return stop(item.contactId, "provider_unknown");
+    let all: Opportunity[];
+    try { all = await deps.list(item.contactId, plan.pipelineId); } catch { return stop(item.contactId, "read_failed"); }
+    if (all.length !== 1 || all[0].id !== response.id || !exactOpportunity(all[0], plan, item)) {
+      return stop(item.contactId, "provider_unknown");
+    }
     const outcome = { contactId: item.contactId, opportunityId: verified.id, evidence: "response" as const };
-    try { await deps.ledger.record(plan.id, outcome); created = (await deps.ledger.progress(plan.id)).outcomes; }
+    try { await deps.ledger.record(plan.id, outcome, leaseId); created = (await deps.ledger.progress(plan.id)).outcomes; }
     catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const,
       created: [...created, outcome], uncertainContactId: item.contactId }; }
   }
-  try { const progress = await deps.ledger.complete(plan.id);
+  try { const progress = await deps.ledger.complete(plan.id, leaseId);
     return { mode: "create_only" as const, status: "complete" as const, created: progress.outcomes }; }
   catch { return { mode: "create_only" as const, status: "stopped" as const, reason: "ledger_write_failed" as const, created }; }
 }
