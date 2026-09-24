@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "crons": [
+    { "path": "/api/cron/instagram-failures", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/instagram-daily-report", "schedule": "0 * * * *" }
+  ]
+}
+

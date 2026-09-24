@@ -1,0 +1,42 @@
+{
+  "name": "peakspan-pt-outreach-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Durable TypeScript replacement for the PeakSpan PT outreach n8n workflows.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "node scripts/bootstrap-db.mjs && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run test:integration && npm run build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@next/env": "16.3.4",
+    "drizzle-orm": "0.45.2",
+    "next": "16.3.4",
+    "postgres": "3.4.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "workflow": "4.8.5",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/node": "26.4.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@workflow/vitest": "4.0.21",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "typescript": "6.0.3",
+    "vitest": "5.0.0"
+  }
+}
+
