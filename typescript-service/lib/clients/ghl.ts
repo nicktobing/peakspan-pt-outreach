@@ -8,7 +8,8 @@ const contact = z.object({ id, tags: z.array(z.string()).default([]), firstName:
   phone: z.string().nullable().optional(), companyName: z.string().nullable().optional(),
   dateAdded: z.string().nullable().optional(),
   customFields: z.array(z.object({ id, value: z.unknown().optional(), fieldValue: z.unknown().optional() })).default([]) });
-const opportunity = z.object({ id, contactId: id.optional(), pipelineId: id.optional(), pipelineStageId: id.optional(), status: z.string().optional() });
+const opportunity = z.object({ id, contactId: id.optional(), pipelineId: id.optional(), pipelineStageId: id.optional(),
+  locationId: id.optional(), name: z.string().optional(), status: z.string().optional() });
 const pipelineStage = z.object({ id, name: z.string().trim().min(1) });
 const pipeline = z.object({ id, name: z.string().trim().min(1), stages: z.array(pipelineStage) });
 const note = z.object({ id, body: z.string() });
@@ -96,9 +97,19 @@ export class GhlClient {
     }
     throw new ProviderError("ghl", "pagination");
   }
+  async getOpportunity(opportunityId: string) {
+    return (await this.http.request(`/opportunities/${resourceId(opportunityId)}`, z.object({ opportunity }))).opportunity;
+  }
   async listPipelines() {
     return (await this.http.request(`/opportunities/pipelines?${new URLSearchParams({ locationId: this.locationId })}`,
       z.object({ pipelines: z.array(pipeline) }))).pipelines;
+  }
+  async createOpportunity(input: { pipelineId: string; pipelineStageId: string; contactId: string; name: string }) {
+    const body = parseInput("ghl", z.object({ pipelineId: id, pipelineStageId: id, contactId: id,
+      name: z.string().trim().min(1).max(250) }).strict(), input);
+    return (await this.http.request("/opportunities/", z.object({ opportunity }), { method: "POST", body: {
+      ...body, locationId: this.locationId, status: "open",
+    } })).opportunity;
   }
   async transitionOpportunity(opportunityId: string, pipelineStageId: string) {
     return this.http.request(`/opportunities/${resourceId(opportunityId)}`, z.object({ opportunity }), {
@@ -106,4 +117,3 @@ export class GhlClient {
     });
   }
 }
-

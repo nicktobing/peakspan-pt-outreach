@@ -30,11 +30,17 @@ describe("HTTP failure policy", () => {
     await expect(enabled.request("/send", z.object({}), { method: "POST" })).rejects.toThrow("test:unknown_outcome");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
-  it("rechecks authorization before retrying a rate-limited mutation", async () => {
+  it("never retries a rate-limited non-idempotent mutation", async () => {
     const fetch = fakeHttp(json({}, 429));
-    const authorizeWrite = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+    const authorizeWrite = vi.fn(async () => true);
+    const client = new JsonClient("test", "https://example.test", {}, { fetch, authorizeWrite });
+    await expect(client.request("/send", z.object({}), { method: "POST" })).rejects.toThrow("unknown_outcome");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("rechecks authorization before retrying an idempotent rate-limited mutation", async () => {
+    const fetch = fakeHttp(json({}, 429)); const authorizeWrite = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
     const client = new JsonClient("test", "https://example.test", {}, { fetch, authorizeWrite, sleep: async () => {} });
-    await expect(client.request("/send", z.object({}), { method: "POST" })).rejects.toThrow("disabled");
+    await expect(client.request("/send", z.object({}), { method: "POST", idempotent: true })).rejects.toThrow("disabled");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
@@ -79,6 +85,20 @@ describe("GHL contracts", () => {
     expect(await client.listOpportunities()).toHaveLength(1);
     expect((await client.transitionOpportunity("o", "qualified")).opportunity.pipelineStageId).toBe("qualified");
     expect((await client.listPipelines())[0].stages[0].name).toBe("Qualified");
+  });
+  it("creates an open opportunity with the exact pipeline, stage, contact and location", async () => {
+    const fetch = fakeHttp(json({ opportunity: { id: "created", contactId: "contact", pipelineId: "pipeline",
+      pipelineStageId: "qualified", locationId: "location", name: "PT Affiliate - @trainer", status: "open" } }, 201),
+      json({ opportunity: { id: "created", contactId: "contact", pipelineId: "pipeline", pipelineStageId: "qualified",
+        locationId: "location", name: "PT Affiliate - @trainer", status: "open" } }));
+    const client = new GhlClient("fixture", "location", { fetch, authorizeWrite: allowFixtureWrite });
+    const result = await client.createOpportunity({ pipelineId: "pipeline", pipelineStageId: "qualified", contactId: "contact",
+      name: "PT Affiliate - @trainer" });
+    expect(result.id).toBe("created");
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ pipelineId: "pipeline", pipelineStageId: "qualified",
+      contactId: "contact", name: "PT Affiliate - @trainer", locationId: "location", status: "open" });
+    expect((await client.getOpportunity("created"))).toMatchObject({ id: "created", locationId: "location", status: "open" });
+    expect(String(fetch.mock.calls[1][0])).toBe("https://services.leadconnectorhq.com/opportunities/created");
   });
 });
 

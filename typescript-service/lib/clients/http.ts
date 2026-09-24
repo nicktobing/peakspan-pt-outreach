@@ -43,7 +43,7 @@ export class JsonClient {
         const status = response.status;
         await response.body?.cancel().catch(() => {});
         const temporary = status === 429 || status === 408 || status >= 500;
-        if (temporary && (retrySafe || status === 429) && attempt < 2) {
+        if (temporary && retrySafe && attempt < 2) {
           const header = response.headers.get("retry-after");
           const seconds = header === null ? NaN : Number(header);
           const delay = Number.isFinite(seconds) ? seconds * 1000 : header ? Date.parse(header) - Date.now() : NaN;
@@ -52,9 +52,8 @@ export class JsonClient {
           await sleep(Number.isFinite(delay) ? Math.max(0, delay) : 250 * 2 ** attempt);
           continue;
         }
-        throw new ProviderError(this.provider,
-          status === 401 || status === 403 ? "authentication" : temporary
-            ? (!retrySafe && status !== 429 ? "unknown_outcome" : "transient") : "permanent", status);
+        throw new ProviderError(this.provider, status === 401 || status === 403 ? "authentication" : temporary
+          ? (retrySafe ? "transient" : "unknown_outcome") : "permanent", status);
       }
       try {
         const value: unknown = await response.json();
@@ -76,4 +75,3 @@ export function parseInput<T>(provider: string, schema: z.ZodType<T>, value: unk
 export function resourceId(value: string) {
   return encodeURIComponent(parseInput("client", z.string().regex(/^[a-zA-Z0-9_-]+$/).max(200), value));
 }
-
